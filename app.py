@@ -46,7 +46,7 @@ if selected_museum != "Όλα":
     final_df = final_df[final_df['Museum'] == selected_museum]
 
 # --- ΚΥΡΙΩΣ ΠΕΡΙΕΧΟΜΕΝΟ ---
-st.title("🏛️ Dashboard Επισκεψιμότητας Μουσείων")
+st.title("🏛️ Στοιχεία Επισκεψιμότητας Μουσείων")
 st.markdown(f"Ανάλυση δεδομένων ΕΛΣΤΑΤ για την περίοδο **{selected_years[0]} - {selected_years[1]}**")
 
 # 1. Περιγραφική Στατιστική (KPIs)
