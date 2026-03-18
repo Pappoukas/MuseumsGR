@@ -80,9 +80,11 @@ if selected_museum == "Όλα":
 st.subheader("📋 Αναλυτικά Στοιχεία (Πίνακας)")
 st.dataframe(final_df[['Region', 'Museum', 'Year', 'Month', 'Visitors']], use_container_width=True)
 
-csv = final_df.to_csv(index=False).encode('utf-8')
+# Δημιουργία CSV με κωδικοποίηση UTF-8 και προσθήκη BOM για το Excel
+csv = final_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+
 st.download_button(
-    label="📥 Λήψη επιλεγμένων δεδομένων σε CSV",
+    label="📥 Λήψη επιλεγμένων δεδομένων σε CSV (Ελληνικά)",
     data=csv,
     file_name='museum_data_filtered.csv',
     mime='text/csv',
