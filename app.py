@@ -60,3 +60,14 @@ if selected_museum == "Όλα":
     top_10 = df.assign(Total=df[selected_years].sum(axis=1)).sort_values(by='Total', ascending=False).head(10)
     fig_bar = px.bar(top_10, x='Μουσείο', y='Total', color='Total', title="Κατάταξη βάσει επιλεγμένων ετών")
     st.plotly_chart(fig_bar, use_container_width=True)
+
+# Προσθήκη κουμπιού εξαγωγής δεδομένων (CSV)
+st.sidebar.markdown("---")
+csv = filtered_df.to_csv(index=False).encode('utf-8')
+
+st.sidebar.download_button(
+    label="📥 Λήψη δεδομένων σε CSV",
+    data=csv,
+    file_name='museum_data_filtered.csv',
+    mime='text/csv',
+)
