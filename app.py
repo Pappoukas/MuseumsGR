@@ -42,7 +42,7 @@ if selected_museum != "Όλα":
     final_df = final_df[final_df['Museum'] == selected_museum]
 
 # --- MAIN DASHBOARD ---
-st.title("🏛️ Museum Strategy Dashboard")
+st.title("🏛️ Ανάλυση Επισκεψιμότητας Ελληνικών Μουσείων (1998-2025)")
 
 # KPIs
 c1, c2, c3 = st.columns(3)
