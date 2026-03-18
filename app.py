@@ -8,8 +8,7 @@ st.set_page_config(page_title="Hellenic Museums Analytics", layout="wide")
 # Φόρτωση Δεδομένων
 @st.cache_data
 def load_data():
-    # Αντικαταστήστε το 'Μουσεία.xlsx - Visitors_tbl.csv' με το ακριβές όνομα του αρχείου σας
-    df = pd.read_csv('Μουσεία.xlsx - Visitors_tbl.csv')
+    df = pd.read_csv('MuseumsGR.csv')
     return df
 
 df = load_data()
