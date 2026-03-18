@@ -90,6 +90,18 @@ with col_right:
     else:
         st.info("Ο δείκτης Gini υπολογίζεται μόνο για τη σύγκριση πολλαπλών μουσείων.")
 
+# Σύγκριση Περιφερειών (Αν είναι επιλεγμένα "Όλα" τα μουσεία)
+if selected_museum == "Όλα":
+    st.subheader("🌍 Επισκεψιμότητα ανά Περιφέρεια")
+    reg_data = final_df.groupby('Region')['Visitors'].sum().sort_values(ascending=True).reset_index()
+    fig_reg = px.bar(reg_data, x='Visitors', y='Region', orientation='h', 
+                     title="Κατάταξη Περιφερειών", color='Visitors', color_continuous_scale='Blues')
+    st.plotly_chart(fig_reg, use_container_width=True)
+
+# 4. Αναλυτικός Πίνακας & Download
+st.subheader("📋 Αναλυτικά Στοιχεία (Πίνακας)")
+st.dataframe(final_df[['Region', 'Museum', 'Year', 'Month', 'Visitors']], use_container_width=True)
+
 # Download
 csv = final_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 st.download_button("📥 Λήψη Δεδομένων (UTF-8)", data=csv, file_name='museum_stats.csv')
