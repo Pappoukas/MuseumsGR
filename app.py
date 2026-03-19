@@ -79,6 +79,13 @@ with col1:
 with col2:
     st.write("🔻 Bottom 5")
     st.dataframe(museum_rank.tail(5))
+
+st.subheader("🔗 Συσχέτιση Επισκεψιμότητας & Μήνα")
+
+corr_df = final_df[['Month', 'Visitors']]
+
+fig_corr = px.scatter(corr_df, x='Month', y='Visitors', trendline="ols")
+st.plotly_chart(fig_corr, use_container_width=True)
     
 # Γράφημα Τάσης
 st.subheader("📈 Χρονοσειρά Επισκεψιμότητας")
