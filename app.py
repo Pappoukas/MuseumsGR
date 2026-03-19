@@ -52,22 +52,6 @@ c3.metric("Πλήθος Μουσείων", final_df['Museum'].nunique())
 
 st.divider()
 
-st.subheader("🧠 Key Insights")
-
-max_year = yearly.idxmax()
-min_year = yearly.idxmin()
-
-peak_month = final_df.groupby('Month')['Visitors'].mean().idxmax()
-low_month = final_df.groupby('Month')['Visitors'].mean().idxmin()
-
-st.markdown(f"""
-- 📈 Υψηλότερη επισκεψιμότητα καταγράφηκε το **{max_year}**
-- 📉 Χαμηλότερη επισκεψιμότητα το **{min_year}**
-- ☀️ Peak μήνας: **{peak_month}**
-- ❄️ Low μήνας: **{low_month}**
-- 📊 Μέση ετήσια μεταβολή: **{growth:.2f}%**
-""")
-
 # Γράφημα Τάσης
 st.subheader("📈 Χρονοσειρά Επισκεψιμότητας")
 trend = final_df.groupby('Date')['Visitors'].sum().reset_index()
