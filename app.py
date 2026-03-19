@@ -44,11 +44,25 @@ if selected_museum != "Όλα":
 # --- MAIN DASHBOARD ---
 st.title("🏛️ Ανάλυση Επισκεψιμότητας Ελληνικών Μουσείων (1998-2025)")
 
-# KPIs
-c1, c2, c3 = st.columns(3)
-c1.metric("Συνολικοί Επισκέπτες", f"{final_df['Visitors'].sum():,.0f}")
-c2.metric("Μέσος Όρος/Μήνα", f"{final_df['Visitors'].mean():,.0f}")
-c3.metric("Πλήθος Μουσείων", final_df['Museum'].nunique())
+# --- EXTRA KPIs ---
+st.subheader("📊 Advanced KPIs")
+
+colA, colB, colC, colD = st.columns(4)
+
+total_visitors = final_df['Visitors'].sum()
+monthly_avg = final_df['Visitors'].mean()
+
+# Growth rate
+yearly = final_df.groupby('Year')['Visitors'].sum()
+growth = yearly.pct_change().mean() * 100
+
+# Seasonality strength
+seasonality_strength = (final_df.groupby('Month')['Visitors'].mean().std() / monthly_avg)
+
+colA.metric("Συνολικοί Επισκέπτες", f"{total_visitors:,.0f}")
+colB.metric("Μέσος / Μήνα", f"{monthly_avg:,.0f}")
+colC.metric("Μέση Ετήσια Μεταβολή", f"{growth:.2f}%")
+colD.metric("Seasonality Index", f"{seasonality_strength:.2f}")
 
 st.divider()
 
@@ -89,28 +103,6 @@ with col_right:
         st.plotly_chart(fig_l, use_container_width=True)
     else:
         st.info("Ο δείκτης Gini υπολογίζεται μόνο για τη σύγκριση πολλαπλών μουσείων.")
-
-# --- EXTRA KPIs ---
-st.subheader("📊 Advanced KPIs")
-
-colA, colB, colC, colD = st.columns(4)
-
-total_visitors = final_df['Visitors'].sum()
-monthly_avg = final_df['Visitors'].mean()
-
-# Growth rate
-yearly = final_df.groupby('Year')['Visitors'].sum()
-growth = yearly.pct_change().mean() * 100
-
-# Seasonality strength
-seasonality_strength = (final_df.groupby('Month')['Visitors'].mean().std() / monthly_avg)
-
-colA.metric("Συνολικοί Επισκέπτες", f"{total_visitors:,.0f}")
-colB.metric("Μέσος / Μήνα", f"{monthly_avg:,.0f}")
-colC.metric("Μέση Ετήσια Μεταβολή", f"{growth:.2f}%")
-colD.metric("Seasonality Index", f"{seasonality_strength:.2f}")
-
-st.divider()
 
 # Σύγκριση Περιφερειών (Αν είναι επιλεγμένα "Όλα" τα μουσεία)
 if selected_museum == "Όλα":
