@@ -139,7 +139,25 @@ if selected_museum == "Όλα":
                      title="Κατάταξη Περιφερειών", color='Visitors', color_continuous_scale='Blues')
     st.plotly_chart(fig_reg, use_container_width=True)
 
-# 4. Αναλυτικός Πίνακας & Download
+# ------------------ INSIGHTS ------------------
+st.subheader("🧠 Insights")
+
+if len(yearly) > 0:
+    max_year = yearly.idxmax()
+    min_year = yearly.idxmin()
+
+    peak_month = final_df.groupby('Month')['Visitors'].mean().idxmax()
+    low_month = final_df.groupby('Month')['Visitors'].mean().idxmin()
+
+    st.markdown(f"""
+    - 📈 Peak έτος: **{max_year}**
+    - 📉 Low έτος: **{min_year}**
+    - ☀️ Peak μήνας: **{peak_month}**
+    - ❄️ Low μήνας: **{low_month}**
+    - 📊 Growth: **{growth:.2f}%**
+    """)
+
+# Αναλυτικός Πίνακας & Download
 st.subheader("📋 Αναλυτικά Στοιχεία (Πίνακας)")
 st.dataframe(final_df[['Region', 'Museum', 'Year', 'Month', 'Visitors']], use_container_width=True)
 
