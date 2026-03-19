@@ -66,6 +66,20 @@ colD.metric("Seasonality Index", f"{seasonality_strength:.2f}")
 
 st.divider()
 
+st.subheader("🏆 Top & Bottom Museums")
+
+museum_rank = final_df.groupby('Museum')['Visitors'].sum().sort_values(ascending=False)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.write("🔝 Top 5")
+    st.dataframe(museum_rank.head(5))
+
+with col2:
+    st.write("🔻 Bottom 5")
+    st.dataframe(museum_rank.tail(5))
+    
 # Γράφημα Τάσης
 st.subheader("📈 Χρονοσειρά Επισκεψιμότητας")
 trend = final_df.groupby('Date')['Visitors'].sum().reset_index()
