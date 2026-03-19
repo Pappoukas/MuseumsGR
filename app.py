@@ -106,12 +106,16 @@ if selected_museum == "Όλα":
 else:
     concentration = "—"
 
-colA, colB, colC, colD, colE = st.columns(5)
-colA.metric("Συνολικοί Επισκέπτες", f"{total_visitors:,.0f}")
-colB.metric("Μέσος / Μήνα",         f"{monthly_avg:,.0f}")
-colC.metric("Διάμεσος / Μήνα",      f"{monthly_median:,.0f}")
-colD.metric("Μέση Ετήσια Μεταβολή", f"{growth:.2f}%")
-colE.metric("Συγκέντρωση",          concentration, help="Πόσα μουσεία καλύπτουν το 80% των επισκεπτών")
+# Γραμμή 1: Συνολικοί Επισκέπτες & Συγκέντρωση
+row1_col1, row1_col2 = st.columns(2)
+row1_col1.metric("Συνολικοί Επισκέπτες", f"{total_visitors:,.0f}")
+row1_col2.metric("Συγκέντρωση", concentration, help="Πόσα μουσεία καλύπτουν το 80% των επισκεπτών")
+
+# Γραμμή 2: Υπόλοιπα KPIs
+row2_col1, row2_col2, row2_col3 = st.columns(3)
+row2_col1.metric("Μέσος / Μήνα",         f"{monthly_avg:,.0f}")
+row2_col2.metric("Διάμεσος / Μήνα",      f"{monthly_median:,.0f}")
+row2_col3.metric("Μέση Ετήσια Μεταβολή", f"{growth:.2f}%")
 
 st.divider()
 
@@ -193,30 +197,6 @@ fig_trend.add_vrect(
     fillcolor="red", opacity=0.08,
     annotation_text="COVID-19", annotation_position="top left"
 )
-
-# ── Trend Forecast (linear) ──────────────────
-yearly_fc = final_df.groupby('Year')['Visitors'].sum().reset_index()
-if len(yearly_fc) >= 3:
-    x_vals = yearly_fc['Year'].values
-    y_vals = yearly_fc['Visitors'].values
-    coeffs = np.polyfit(x_vals, y_vals, 1)
-    future_years = np.array([max(x_vals) + 1, max(x_vals) + 2])
-    future_visitors = np.polyval(coeffs, future_years)
-
-    forecast_df = pd.DataFrame({
-        'Date': pd.to_datetime([f"{y}-06-01" for y in future_years]),
-        'Visitors': future_visitors,
-        'Type': 'Πρόβλεψη'
-    })
-    fig_trend.add_traces(
-        px.scatter(forecast_df, x='Date', y='Visitors',
-                   symbol_sequence=['diamond'], color_discrete_sequence=['orange'])
-        .data
-    )
-    fig_trend.add_annotation(
-        x=forecast_df['Date'].iloc[-1], y=forecast_df['Visitors'].iloc[-1],
-        text="📍 Πρόβλεψη", showarrow=True, arrowhead=2, font=dict(color="orange")
-    )
 
 st.plotly_chart(fig_trend, use_container_width=True)
 
