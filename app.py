@@ -93,6 +93,24 @@ with col2:
     st.write("🔻 Bottom 5")
     st.dataframe(museum_rank.tail(5))
 
+# ------------------ INSIGHTS ------------------
+st.subheader("🧠 Insights")
+
+if len(yearly) > 0:
+    max_year = yearly.idxmax()
+    min_year = yearly.idxmin()
+
+    peak_month = final_df.groupby('Month')['Visitors'].mean().idxmax()
+    low_month = final_df.groupby('Month')['Visitors'].mean().idxmin()
+
+    st.markdown(f"""
+    - 📈 Peak έτος: **{max_year}**
+    - 📉 Low έτος: **{min_year}**
+    - ☀️ Peak μήνας: **{peak_month}**
+    - ❄️ Low μήνας: **{low_month}**
+    - 📊 Growth: **{growth:.2f}%**
+    """)
+
 # Γράφημα Τάσης
 st.subheader("📈 Χρονοσειρά Επισκεψιμότητας")
 trend = final_df.groupby('Date')['Visitors'].sum().reset_index()
@@ -139,23 +157,6 @@ if selected_museum == "Όλα":
                      title="Κατάταξη Περιφερειών", color='Visitors', color_continuous_scale='Blues')
     st.plotly_chart(fig_reg, use_container_width=True)
 
-# ------------------ INSIGHTS ------------------
-st.subheader("🧠 Insights")
-
-if len(yearly) > 0:
-    max_year = yearly.idxmax()
-    min_year = yearly.idxmin()
-
-    peak_month = final_df.groupby('Month')['Visitors'].mean().idxmax()
-    low_month = final_df.groupby('Month')['Visitors'].mean().idxmin()
-
-    st.markdown(f"""
-    - 📈 Peak έτος: **{max_year}**
-    - 📉 Low έτος: **{min_year}**
-    - ☀️ Peak μήνας: **{peak_month}**
-    - ❄️ Low μήνας: **{low_month}**
-    - 📊 Growth: **{growth:.2f}%**
-    """)
 
 # Αναλυτικός Πίνακας & Download
 st.subheader("📋 Αναλυτικά Στοιχεία (Πίνακας)")
