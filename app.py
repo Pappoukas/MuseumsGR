@@ -24,22 +24,35 @@ def load_data():
 
 df = load_data()
 
-# --- SIDEBAR ---
+# ------------------ SIDEBAR ------------------
 st.sidebar.header("📊 Φίλτρα Ανάλυσης")
-region_list = sorted(df['Region'].unique().tolist())
+
+# Περιφέρειες
+region_list = sorted(df['Region'].dropna().unique())
 selected_region = st.sidebar.multiselect("Περιφέρειες", region_list, default=region_list)
 
 df_filt = df[df['Region'].isin(selected_region)]
-museum_list = sorted(df_filt['Museum'].unique().tolist())
+
+# Περιφερειακές Ενότητες (NEW)
+if 'Regional_Unit' in df.columns:
+    unit_list = sorted(df_filt['Regional_Unit'].dropna().unique())
+    selected_unit = st.sidebar.multiselect("Περιφερειακές Ενότητες", unit_list, default=unit_list)
+    df_filt = df_filt[df_filt['Regional_Unit'].isin(selected_unit)]
+
+# Μουσείο
+museum_list = sorted(df_filt['Museum'].dropna().unique())
 selected_museum = st.sidebar.selectbox("Μουσείο", ["Όλα"] + museum_list)
 
-years = sorted(df['Year'].unique().tolist())
+# Έτη
+years = sorted(df['Year'].unique())
 selected_years = st.sidebar.slider("Έτη", min(years), max(years), (2018, max(years)))
 
-# Εφαρμογή Φίλτρων
+# ------------------ FILTER DATA ------------------
 final_df = df_filt[(df_filt['Year'] >= selected_years[0]) & (df_filt['Year'] <= selected_years[1])]
+
 if selected_museum != "Όλα":
     final_df = final_df[final_df['Museum'] == selected_museum]
+
 
 # --- MAIN DASHBOARD ---
 st.title("🏛️ Ανάλυση Επισκεψιμότητας Ελληνικών Μουσείων (1998-2025)")
