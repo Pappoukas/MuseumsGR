@@ -52,6 +52,22 @@ c3.metric("Πλήθος Μουσείων", final_df['Museum'].nunique())
 
 st.divider()
 
+st.subheader("🧠 Key Insights")
+
+max_year = yearly.idxmax()
+min_year = yearly.idxmin()
+
+peak_month = final_df.groupby('Month')['Visitors'].mean().idxmax()
+low_month = final_df.groupby('Month')['Visitors'].mean().idxmin()
+
+st.markdown(f"""
+- 📈 Υψηλότερη επισκεψιμότητα καταγράφηκε το **{max_year}**
+- 📉 Χαμηλότερη επισκεψιμότητα το **{min_year}**
+- ☀️ Peak μήνας: **{peak_month}**
+- ❄️ Low μήνας: **{low_month}**
+- 📊 Μέση ετήσια μεταβολή: **{growth:.2f}%**
+""")
+
 # Γράφημα Τάσης
 st.subheader("📈 Χρονοσειρά Επισκεψιμότητας")
 trend = final_df.groupby('Date')['Visitors'].sum().reset_index()
@@ -89,6 +105,28 @@ with col_right:
         st.plotly_chart(fig_l, use_container_width=True)
     else:
         st.info("Ο δείκτης Gini υπολογίζεται μόνο για τη σύγκριση πολλαπλών μουσείων.")
+
+# --- EXTRA KPIs ---
+st.subheader("📊 Advanced KPIs")
+
+colA, colB, colC, colD = st.columns(4)
+
+total_visitors = final_df['Visitors'].sum()
+monthly_avg = final_df['Visitors'].mean()
+
+# Growth rate
+yearly = final_df.groupby('Year')['Visitors'].sum()
+growth = yearly.pct_change().mean() * 100
+
+# Seasonality strength
+seasonality_strength = (final_df.groupby('Month')['Visitors'].mean().std() / monthly_avg)
+
+colA.metric("Συνολικοί Επισκέπτες", f"{total_visitors:,.0f}")
+colB.metric("Μέσος / Μήνα", f"{monthly_avg:,.0f}")
+colC.metric("Μέση Ετήσια Μεταβολή", f"{growth:.2f}%")
+colD.metric("Seasonality Index", f"{seasonality_strength:.2f}")
+
+st.divider()
 
 # Σύγκριση Περιφερειών (Αν είναι επιλεγμένα "Όλα" τα μουσεία)
 if selected_museum == "Όλα":
