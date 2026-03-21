@@ -414,7 +414,7 @@ if selected_museum == "Όλα":
             color='Ποσοστό (%)', color_continuous_scale='Blues',
             text='Ποσοστό (%)'
         )
-        fig_pct.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        fig_pct.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
         st.plotly_chart(fig_pct, use_container_width=True)
 
         # Και ο πίνακας
