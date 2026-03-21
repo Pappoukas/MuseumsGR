@@ -378,13 +378,15 @@ if selected_museum == "Όλα":
     reg_museum_count.columns = ['Region', 'Museum_Count']
     reg_data = reg_data.merge(reg_museum_count, on='Region')
     reg_data['Επισκέπτες/Μουσείο'] = (reg_data['Visitors'] / reg_data['Museum_Count']).round(0)
-
+ 
+    reg_data['Ποσοστό (%)'] = (
+        reg_data['Visitors'] / reg_data['Visitors'].sum() * 100
+    ).round(2)
+ 
     tab_abs, tab_norm, tab_pct = st.tabs([
-    "Απόλυτα", 
-    "Ανά Μουσείο", 
-    "Ποσοστά %"
-])
-
+        "Απόλυτα", "Ανά Μουσείο", "Ποσοστά %"
+    ])
+ 
     with tab_abs:
         fig_reg = px.bar(
             reg_data, x='Visitors', y='Region', orientation='h',
@@ -392,7 +394,7 @@ if selected_museum == "Όλα":
             color='Visitors', color_continuous_scale='Blues'
         )
         st.plotly_chart(fig_reg, use_container_width=True)
-
+ 
     with tab_norm:
         fig_reg_n = px.bar(
             reg_data.sort_values('Επισκέπτες/Μουσείο'),
@@ -401,12 +403,8 @@ if selected_museum == "Όλα":
             color='Επισκέπτες/Μουσείο', color_continuous_scale='Greens'
         )
         st.plotly_chart(fig_reg_n, use_container_width=True)
-
+ 
     with tab_pct:
-        reg_data['Ποσοστό (%)'] = (
-            reg_data['Visitors'] / reg_data['Visitors'].sum() * 100
-        ).round(2)
-
         fig_pct = px.bar(
             reg_data.sort_values('Ποσοστό (%)'),
             x='Ποσοστό (%)', y='Region', orientation='h',
@@ -414,30 +412,84 @@ if selected_museum == "Όλα":
             color='Ποσοστό (%)', color_continuous_scale='Blues',
             text='Ποσοστό (%)'
         )
-        fig_pct.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+        fig_pct.update_traces(
+            texttemplate='%{text:.2f}%',
+            textposition='outside'
+        )
         st.plotly_chart(fig_pct, use_container_width=True)
-
-        # Και ο πίνακας
+ 
         st.dataframe(
-            reg_data[['Region','Visitors','Ποσοστό (%)']]\
-                .sort_values('Ποσοστό (%)', ascending=False)\
-                .reset_index(drop=True),
+            reg_data[['Region', 'Visitors', 'Ποσοστό (%)']]
+            .sort_values('Ποσοστό (%)', ascending=False)
+            .reset_index(drop=True)
+            .style.format({'Visitors': '{:,.0f}', 'Ποσοστό (%)': '{:.2f}%'}),
             use_container_width=True
         )
-
+ 
 st.divider()
-
+ 
 # ═════════════════════════════════════════════
-# 11. ΑΝΑΛΥΤΙΚΟΣ ΠΙΝΑΚΑΣ & DOWNLOAD
+# 11. ΕΠΙΣΚΕΨΙΜΟΤΗΤΑ ΑΝΑ ΠΕΡΙΦΕΡΕΙΑ & ΕΠΟΧΗ
+# ═════════════════════════════════════════════
+if selected_museum == "Όλα":
+    st.subheader("🌸 Επισκεψιμότητα ανά Περιφέρεια & Εποχή")
+ 
+    SEASONS = {
+        "🌸 Άνοιξη":    [3, 4, 5],
+        "☀️ Καλοκαίρι": [6, 7, 8],
+        "🍂 Φθινόπωρο": [9, 10, 11],
+        "❄️ Χειμώνας":  [12, 1, 2],
+    }
+ 
+    season_tabs = st.tabs(list(SEASONS.keys()))
+ 
+    for tab, (season_name, months) in zip(season_tabs, SEASONS.items()):
+        with tab:
+            season_df = (
+                final_df[final_df['Month'].isin(months)]
+                .groupby('Region')['Visitors']
+                .sum()
+                .reset_index()
+            )
+            season_df['Ποσοστό (%)'] = (
+                season_df['Visitors'] / season_df['Visitors'].sum() * 100
+            ).round(2)
+            season_df = season_df.sort_values('Visitors', ascending=True)
+ 
+            fig_season = px.bar(
+                season_df,
+                x='Visitors', y='Region', orientation='h',
+                title=f"Επισκεψιμότητα ανά Περιφέρεια — {season_name}",
+                color='Visitors', color_continuous_scale='Blues',
+                text='Ποσοστό (%)'
+            )
+            fig_season.update_traces(
+                texttemplate='%{text:.2f}%',
+                textposition='outside'
+            )
+            st.plotly_chart(fig_season, use_container_width=True)
+ 
+            st.dataframe(
+                season_df[['Region', 'Visitors', 'Ποσοστό (%)']]
+                .sort_values('Ποσοστό (%)', ascending=False)
+                .reset_index(drop=True)
+                .style.format({'Visitors': '{:,.0f}', 'Ποσοστό (%)': '{:.2f}%'}),
+                use_container_width=True
+            )
+ 
+st.divider()
+ 
+# ═════════════════════════════════════════════
+# 12. ΑΝΑΛΥΤΙΚΟΣ ΠΙΝΑΚΑΣ & DOWNLOAD
 # ═════════════════════════════════════════════
 st.subheader("📋 Αναλυτικά Στοιχεία (Πίνακας)")
 st.dataframe(
     final_df[['Region', 'Museum', 'Year', 'Month', 'Visitors']],
     use_container_width=True
 )
-
+ 
 col_dl1, col_dl2 = st.columns(2)
-
+ 
 with col_dl1:
     csv = final_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
     st.download_button(
@@ -446,7 +498,7 @@ with col_dl1:
         file_name='museum_stats.csv',
         mime='text/csv'
     )
-
+ 
 with col_dl2:
     excel_data = to_excel(final_df[['Region', 'Museum', 'Year', 'Month', 'Visitors']])
     st.download_button(
