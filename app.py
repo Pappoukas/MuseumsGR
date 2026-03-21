@@ -607,7 +607,201 @@ if not df_places.empty:
 st.divider()
 
 # ═════════════════════════════════════════════
-# 13. ΑΝΑΛΥΤΙΚΟΣ ΠΙΝΑΚΑΣ & DOWNLOAD
+# 13. VISITORS vs MONTH / REGION / SENTIMENT
+# ═════════════════════════════════════════════
+st.subheader("📊 Συγκριτικές Αναλύσεις")
+
+tab_vm, tab_vr, tab_vs = st.tabs([
+    "📅 Visitors vs Month",
+    "🌍 Visitors vs Region",
+    "💬 Visitors vs Sentiment"
+])
+
+# ── Visitors vs Month ─────────────────────────
+with tab_vm:
+    monthly_vis = (
+        final_df.groupby('Month')['Visitors']
+        .agg(['sum', 'mean', 'median'])
+        .reset_index()
+    )
+    monthly_vis.columns = ['Month', 'Σύνολο', 'Μέσος Όρος', 'Διάμεσος']
+    monthly_vis['Μήνας'] = monthly_vis['Month'].map(MONTH_NAMES)
+
+    metric_choice = st.radio(
+        "Μετρική:", ["Σύνολο", "Μέσος Όρος", "Διάμεσος"],
+        horizontal=True, key="vm_metric"
+    )
+
+    fig_vm = px.bar(
+        monthly_vis, x='Μήνας', y=metric_choice,
+        title=f"Επισκέπτες ανά Μήνα — {metric_choice}",
+        color=metric_choice, color_continuous_scale='Blues',
+        text=metric_choice,
+        category_orders={'Μήνας': list(MONTH_NAMES.values())}
+    )
+    fig_vm.update_traces(
+        texttemplate='%{text:,.0f}', textposition='outside'
+    )
+    fig_vm.add_hline(
+        y=monthly_vis[metric_choice].mean(),
+        line_dash="dash", line_color="red",
+        annotation_text="Μέσος Όρος"
+    )
+    st.plotly_chart(fig_vm, use_container_width=True)
+
+    # Box plot εποχικότητας
+    final_df_month = final_df.copy()
+    final_df_month['Μήνας'] = final_df_month['Month'].map(MONTH_NAMES)
+    fig_box = px.box(
+        final_df_month,
+        x='Μήνας', y='Visitors',
+        title="Κατανομή Επισκεπτών ανά Μήνα (Box Plot)",
+        color='Μήνας',
+        category_orders={'Μήνας': list(MONTH_NAMES.values())}
+    )
+    fig_box.update_layout(showlegend=False)
+    st.plotly_chart(fig_box, use_container_width=True)
+
+# ── Visitors vs Region ────────────────────────
+with tab_vr:
+    reg_vis = (
+        final_df.groupby('Region')['Visitors']
+        .agg(['sum', 'mean'])
+        .reset_index()
+    )
+    reg_vis.columns = ['Region', 'Σύνολο', 'Μέσος/Μήνα']
+
+    col_rv1, col_rv2 = st.columns(2)
+
+    with col_rv1:
+        fig_vr1 = px.bar(
+            reg_vis.sort_values('Σύνολο'),
+            x='Σύνολο', y='Region', orientation='h',
+            title="Συνολικοί Επισκέπτες ανά Περιφέρεια",
+            color='Σύνολο', color_continuous_scale='Blues',
+            text='Σύνολο'
+        )
+        fig_vr1.update_traces(
+            texttemplate='%{text:,.0f}', textposition='outside'
+        )
+        st.plotly_chart(fig_vr1, use_container_width=True)
+
+    with col_rv2:
+        fig_vr2 = px.bar(
+            reg_vis.sort_values('Μέσος/Μήνα'),
+            x='Μέσος/Μήνα', y='Region', orientation='h',
+            title="Μέσος Μηνιαίος Επισκέπτης ανά Περιφέρεια",
+            color='Μέσος/Μήνα', color_continuous_scale='Greens',
+            text='Μέσος/Μήνα'
+        )
+        fig_vr2.update_traces(
+            texttemplate='%{text:,.0f}', textposition='outside'
+        )
+        st.plotly_chart(fig_vr2, use_container_width=True)
+
+    # Treemap
+    fig_tree = px.treemap(
+        reg_vis,
+        path=['Region'],
+        values='Σύνολο',
+        title="Treemap Επισκεψιμότητας ανά Περιφέρεια",
+        color='Σύνολο', color_continuous_scale='Blues'
+    )
+    st.plotly_chart(fig_tree, use_container_width=True)
+
+# ── Visitors vs Sentiment (Google Rating) ─────
+with tab_vs:
+    if not df_places.empty:
+        visitors_total = (
+            final_df.groupby('Museum')['Visitors'].sum().reset_index()
+        )
+        df_sent = df_places.merge(visitors_total, on='Museum', how='inner')
+        df_sent = df_sent[df_sent['Rating'].notna() & df_sent['Visitors'].notna()].copy()
+
+        # Κατηγοριοποίηση sentiment
+        def sentiment_label(r):
+            if r >= 4.5:   return '🟢 Πολύ Θετικό (≥4.5)'
+            elif r >= 4.0: return '🔵 Θετικό (4.0–4.4)'
+            elif r >= 3.5: return '🟡 Μέτριο (3.5–3.9)'
+            else:          return '🔴 Αρνητικό (<3.5)'
+
+        df_sent['Sentiment'] = df_sent['Rating'].apply(sentiment_label)
+
+        sent_order = [
+            '🟢 Πολύ Θετικό (≥4.5)',
+            '🔵 Θετικό (4.0–4.4)',
+            '🟡 Μέτριο (3.5–3.9)',
+            '🔴 Αρνητικό (<3.5)'
+        ]
+
+        # KPIs ανά sentiment
+        sent_summary = (
+            df_sent.groupby('Sentiment')
+            .agg(Μουσεία=('Museum', 'count'), Επισκέπτες=('Visitors', 'sum'))
+            .reindex([s for s in sent_order if s in df_sent['Sentiment'].unique()])
+            .reset_index()
+        )
+
+        s_cols = st.columns(len(sent_summary))
+        for col, (_, row) in zip(s_cols, sent_summary.iterrows()):
+            col.metric(
+                row['Sentiment'],
+                f"{int(row['Επισκέπτες']):,}",
+                f"{int(row['Μουσεία'])} μουσεία"
+            )
+
+        st.markdown("---")
+
+        # Scatter: Rating vs Visitors
+        fig_sent1 = px.scatter(
+            df_sent,
+            x='Rating', y='Visitors',
+            color='Sentiment',
+            size='Ratings_Total',
+            hover_name='Museum',
+            title="Google Rating vs Επισκεψιμότητα ανά Μουσείο",
+            labels={
+                'Rating': 'Google Rating',
+                'Visitors': 'Συνολικοί Επισκέπτες',
+                'Ratings_Total': 'Αριθμός Κριτικών'
+            },
+            category_orders={'Sentiment': sent_order},
+            color_discrete_map={
+                '🟢 Πολύ Θετικό (≥4.5)': '#2ecc71',
+                '🔵 Θετικό (4.0–4.4)':   '#3498db',
+                '🟡 Μέτριο (3.5–3.9)':   '#f1c40f',
+                '🔴 Αρνητικό (<3.5)':    '#e74c3c'
+            },
+            log_y=True
+        )
+        st.plotly_chart(fig_sent1, use_container_width=True)
+
+        # Box plot επισκεπτών ανά sentiment
+        fig_sent2 = px.box(
+            df_sent,
+            x='Sentiment', y='Visitors',
+            color='Sentiment',
+            title="Κατανομή Επισκεπτών ανά Κατηγορία Sentiment",
+            labels={'Visitors': 'Συνολικοί Επισκέπτες'},
+            category_orders={'Sentiment': sent_order},
+            color_discrete_map={
+                '🟢 Πολύ Θετικό (≥4.5)': '#2ecc71',
+                '🔵 Θετικό (4.0–4.4)':   '#3498db',
+                '🟡 Μέτριο (3.5–3.9)':   '#f1c40f',
+                '🔴 Αρνητικό (<3.5)':    '#e74c3c'
+            },
+            log_y=True
+        )
+        fig_sent2.update_layout(showlegend=False)
+        st.plotly_chart(fig_sent2, use_container_width=True)
+        st.caption("💡 Άξονας Y σε λογαριθμική κλίμακα λόγω μεγάλης απόκλισης τιμών")
+    else:
+        st.info("Απαιτείται το αρχείο museums_place_ids.csv για την ανάλυση Sentiment.")
+
+st.divider()
+
+# ═════════════════════════════════════════════
+# 14. ΑΝΑΛΥΤΙΚΟΣ ΠΙΝΑΚΑΣ & DOWNLOAD
 # ═════════════════════════════════════════════
 st.subheader("📋 Αναλυτικά Στοιχεία (Πίνακας)")
 st.dataframe(
