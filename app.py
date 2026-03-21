@@ -34,7 +34,7 @@ def load_places():
     import os
     if os.path.exists('museums_place_ids.csv'):
         df_p = pd.read_csv('museums_place_ids.csv')
-        df_p = df_p[['Museum', 'Place_ID', 'Google_Maps_URL', 'Rating', 'Ratings_Total', 'Address']].copy()
+        df_p = df_p[['Museum', 'Region', 'Place_ID', 'Google_Maps_URL', 'Rating', 'Ratings_Total', 'Address']].copy()
         df_p['Rating']        = pd.to_numeric(df_p['Rating'],        errors='coerce')
         df_p['Ratings_Total'] = pd.to_numeric(df_p['Ratings_Total'], errors='coerce')
         return df_p
