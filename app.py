@@ -403,27 +403,27 @@ if selected_museum == "Όλα":
         st.plotly_chart(fig_reg_n, use_container_width=True)
 
     with tab_pct:
-    reg_data['Ποσοστό (%)'] = (
-        reg_data['Visitors'] / reg_data['Visitors'].sum() * 100
-    ).round(2)
+        reg_data['Ποσοστό (%)'] = (
+            reg_data['Visitors'] / reg_data['Visitors'].sum() * 100
+        ).round(2)
 
-    fig_pct = px.bar(
-        reg_data.sort_values('Ποσοστό (%)'),
-        x='Ποσοστό (%)', y='Region', orientation='h',
-        title="Μερίδιο Επισκεψιμότητας ανά Περιφέρεια (%)",
-        color='Ποσοστό (%)', color_continuous_scale='Blues',
-        text='Ποσοστό (%)'
-    )
-    fig_pct.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-    st.plotly_chart(fig_pct, use_container_width=True)
+        fig_pct = px.bar(
+            reg_data.sort_values('Ποσοστό (%)'),
+            x='Ποσοστό (%)', y='Region', orientation='h',
+            title="Μερίδιο Επισκεψιμότητας ανά Περιφέρεια (%)",
+            color='Ποσοστό (%)', color_continuous_scale='Blues',
+            text='Ποσοστό (%)'
+        )
+        fig_pct.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        st.plotly_chart(fig_pct, use_container_width=True)
 
-    # Και ο πίνακας
-    st.dataframe(
-        reg_data[['Region','Visitors','Ποσοστό (%)']]\
-            .sort_values('Ποσοστό (%)', ascending=False)\
-            .reset_index(drop=True),
-        use_container_width=True
-    )
+        # Και ο πίνακας
+        st.dataframe(
+            reg_data[['Region','Visitors','Ποσοστό (%)']]\
+                .sort_values('Ποσοστό (%)', ascending=False)\
+                .reset_index(drop=True),
+            use_container_width=True
+        )
 
 st.divider()
 
