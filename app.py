@@ -801,7 +801,186 @@ with tab_vs:
 st.divider()
 
 # ═════════════════════════════════════════════
-# 14. ΑΝΑΛΥΤΙΚΟΣ ΠΙΝΑΚΑΣ & DOWNLOAD
+# 14. ΣΥΓΚΡΙΣΗ ΜΟΥΣΕΙΩΝ
+# ═════════════════════════════════════════════
+st.subheader("🆚 Σύγκριση Μουσείων")
+
+all_museums = sorted(final_df['Museum'].dropna().unique())
+
+cmp_col1, cmp_col2 = st.columns(2)
+with cmp_col1:
+    museum_a = st.selectbox("🔵 Μουσείο Α", all_museums,
+                             index=0, key="cmp_a")
+with cmp_col2:
+    museum_b = st.selectbox("🔴 Μουσείο Β", all_museums,
+                             index=min(1, len(all_museums)-1), key="cmp_b")
+
+if museum_a == museum_b:
+    st.warning("Επίλεξε δύο διαφορετικά μουσεία για σύγκριση.")
+else:
+    df_a = final_df[final_df['Museum'] == museum_a]
+    df_b = final_df[final_df['Museum'] == museum_b]
+
+    # ── KPI Cards ──────────────────────────────
+    st.markdown("#### 📊 Βασικά Στατιστικά")
+
+    def museum_kpis(df, places_df, name):
+        total    = df['Visitors'].sum()
+        avg      = df['Visitors'].mean()
+        med      = df['Visitors'].median()
+        best_y   = df.groupby('Year')['Visitors'].sum().idxmax() if not df.empty else '—'
+        peak_m   = MONTH_NAMES.get(int(df.groupby('Month')['Visitors'].mean().idxmax()), '—') if not df.empty else '—'
+        rating   = '—'
+        reviews  = '—'
+        maps_url = ''
+        if not places_df.empty:
+            row = places_df[places_df['Museum'] == name]
+            if not row.empty:
+                r = row.iloc[0]
+                rating   = f"{r['Rating']:.1f} ⭐" if pd.notna(r['Rating']) else '—'
+                reviews  = f"{int(r['Ratings_Total']):,}" if pd.notna(r['Ratings_Total']) else '—'
+                maps_url = r['Google_Maps_URL'] if pd.notna(r['Google_Maps_URL']) else ''
+        return {
+            'Σύνολο Επισκεπτών': f"{total:,.0f}",
+            'Μέσος / Μήνα':      f"{avg:,.0f}",
+            'Διάμεσος / Μήνα':   f"{med:,.0f}",
+            'Καλύτερο Έτος':     str(best_y),
+            'Peak Μήνας':        peak_m,
+            'Google Rating':     rating,
+            'Κριτικές Google':   reviews,
+            'Google Maps':       maps_url,
+        }
+
+    kpi_a = museum_kpis(df_a, df_places, museum_a)
+    kpi_b = museum_kpis(df_b, df_places, museum_b)
+
+    kpi_keys = [k for k in kpi_a if k != 'Google Maps']
+    hdr, col_a, col_b = st.columns([2, 1, 1])
+    hdr.markdown("**Δείκτης**")
+    col_a.markdown(f"**🔵 {museum_a}**")
+    col_b.markdown(f"**🔴 {museum_b}**")
+
+    for k in kpi_keys:
+        hdr, col_a, col_b = st.columns([2, 1, 1])
+        hdr.write(k)
+        col_a.write(kpi_a[k])
+        col_b.write(kpi_b[k])
+
+    if kpi_a['Google Maps']:
+        st.markdown(f"🔵 [Google Maps — {museum_a}]({kpi_a['Google Maps']})")
+    if kpi_b['Google Maps']:
+        st.markdown(f"🔴 [Google Maps — {museum_b}]({kpi_b['Google Maps']})")
+
+    st.markdown("---")
+
+    # ── Tabs με γραφήματα ──────────────────────
+    tab_c1, tab_c2, tab_c3, tab_c4 = st.tabs([
+        "📈 Χρονοσειρά",
+        "📅 Μηνιαία Σύγκριση",
+        "📆 Ετήσια Σύγκριση",
+        "🔥 Heatmap"
+    ])
+
+    # Χρονοσειρά
+    with tab_c1:
+        ts_a = df_a.groupby('Date')['Visitors'].sum().reset_index()
+        ts_b = df_b.groupby('Date')['Visitors'].sum().reset_index()
+        ts_a['Μουσείο'] = museum_a
+        ts_b['Μουσείο'] = museum_b
+        ts_all = pd.concat([ts_a, ts_b])
+
+        fig_ts = px.line(
+            ts_all, x='Date', y='Visitors', color='Μουσείο',
+            line_shape='spline',
+            title="Μηνιαία Χρονοσειρά Επισκεψιμότητας",
+            color_discrete_map={museum_a: '#3498db', museum_b: '#e74c3c'}
+        )
+        fig_ts.add_vrect(
+            x0="2020-03-01", x1="2021-06-01",
+            fillcolor="gray", opacity=0.08,
+            annotation_text="COVID-19", annotation_position="top left"
+        )
+        st.plotly_chart(fig_ts, use_container_width=True)
+
+    # Μηνιαία
+    with tab_c2:
+        ma_a = df_a.groupby('Month')['Visitors'].mean().reset_index()
+        ma_b = df_b.groupby('Month')['Visitors'].mean().reset_index()
+        ma_a['Μουσείο'] = museum_a
+        ma_b['Μουσείο'] = museum_b
+        ma_all = pd.concat([ma_a, ma_b])
+        ma_all['Μήνας'] = ma_all['Month'].map(MONTH_NAMES)
+
+        fig_ma = px.bar(
+            ma_all, x='Μήνας', y='Visitors', color='Μουσείο',
+            barmode='group',
+            title="Μέσος Μηνιαίος Επισκέπτης ανά Μήνα",
+            color_discrete_map={museum_a: '#3498db', museum_b: '#e74c3c'},
+            category_orders={'Μήνας': list(MONTH_NAMES.values())}
+        )
+        st.plotly_chart(fig_ma, use_container_width=True)
+
+    # Ετήσια
+    with tab_c3:
+        ya_a = df_a.groupby('Year')['Visitors'].sum().reset_index()
+        ya_b = df_b.groupby('Year')['Visitors'].sum().reset_index()
+        ya_a['Μουσείο'] = museum_a
+        ya_b['Μουσείο'] = museum_b
+        ya_all = pd.concat([ya_a, ya_b])
+
+        fig_ya = px.bar(
+            ya_all, x='Year', y='Visitors', color='Μουσείο',
+            barmode='group',
+            title="Ετήσια Επισκεψιμότητα",
+            color_discrete_map={museum_a: '#3498db', museum_b: '#e74c3c'}
+        )
+        st.plotly_chart(fig_ya, use_container_width=True)
+
+        # Ποσοστιαία μεταβολή
+        ya_pivot = ya_all.pivot(index='Year', columns='Μουσείο', values='Visitors')
+        ya_pivot[f'Μεταβολή {museum_a} (%)'] = ya_pivot[museum_a].pct_change() * 100
+        ya_pivot[f'Μεταβολή {museum_b} (%)'] = ya_pivot[museum_b].pct_change() * 100
+        st.dataframe(
+            ya_pivot.style.format({
+                museum_a: '{:,.0f}', museum_b: '{:,.0f}',
+                f'Μεταβολή {museum_a} (%)': '{:+.1f}%',
+                f'Μεταβολή {museum_b} (%)': '{:+.1f}%',
+            }),
+            use_container_width=True
+        )
+
+    # Heatmap
+    with tab_c4:
+        def make_heatmap(df, name, color):
+            hm = (
+                df.groupby(['Year', 'Month'])['Visitors']
+                .sum().reset_index()
+                .pivot(index='Year', columns='Month', values='Visitors')
+            )
+            hm.columns = [MONTH_NAMES.get(c, c) for c in hm.columns]
+            fig = px.imshow(
+                hm, color_continuous_scale=color, aspect='auto',
+                title=f"Heatmap — {name}",
+                labels=dict(x="Μήνας", y="Έτος", color="Επισκέπτες")
+            )
+            return fig
+
+        hm_col1, hm_col2 = st.columns(2)
+        with hm_col1:
+            st.plotly_chart(
+                make_heatmap(df_a, museum_a, 'Blues'),
+                use_container_width=True
+            )
+        with hm_col2:
+            st.plotly_chart(
+                make_heatmap(df_b, museum_b, 'Reds'),
+                use_container_width=True
+            )
+
+st.divider()
+
+# ═════════════════════════════════════════════
+# 15. ΑΝΑΛΥΤΙΚΟΣ ΠΙΝΑΚΑΣ & DOWNLOAD
 # ═════════════════════════════════════════════
 st.subheader("📋 Αναλυτικά Στοιχεία (Πίνακας)")
 st.dataframe(
