@@ -1263,3 +1263,411 @@ else:
             )
             top_museum = df_scatter.loc[df_scatter["Total_Visitors"].idxmax(), "Museum"] if len(df_scatter) > 0 else "—"
             col_m3.metric("Πρώτο σε επισκέπτες", top_museum[:30])
+
+st.divider()
+
+# ═══════════════════════════════════════════════════════════════
+# 17. ΣΥΝΔΥΑΣΤΙΚΗ ΑΝΑΛΥΣΗ ΕΠΙΣΚΕΨΙΜΟΤΗΤΑΣ & GOOGLE RATINGS
+# ═══════════════════════════════════════════════════════════════
+st.subheader("🔬 Συνδυαστική Ανάλυση Επισκεψιμότητας & Google Ratings")
+
+if df_places.empty:
+    st.info("Απαιτείται το αρχείο museums_place_ids.csv.")
+else:
+    # ── Προετοιμασία δεδομένων ────────────────────────────────────────────────
+    visitors_total = (
+        final_df.groupby("Museum")["Visitors"].sum()
+        .reset_index()
+        .rename(columns={"Visitors": "Total_Visitors"})
+    )
+    df_rv = df_places.merge(visitors_total, on="Museum", how="inner")
+    df_rv = df_rv[df_rv["Rating"].notna() & df_rv["Total_Visitors"].notna()].copy()
+    df_rv["Ratings_Total"] = pd.to_numeric(df_rv["Ratings_Total"], errors="coerce").fillna(0)
+
+    # Ποσοστό κριτικών (reviews ανά 1000 επισκέπτες)
+    df_rv["Review_Rate"] = (df_rv["Ratings_Total"] / df_rv["Total_Visitors"] * 1000).round(3)
+
+    # Κατώφλια τεταρτημορίων (διάμεσος)
+    med_rating   = df_rv["Rating"].median()
+    med_visitors = df_rv["Total_Visitors"].median()
+
+    # Ανάθεση τεταρτημορίου
+    def assign_quadrant(row):
+        hi_r = row["Rating"]        >= med_rating
+        hi_v = row["Total_Visitors"] >= med_visitors
+        if   hi_r and     hi_v: return "⭐ Αστέρια"
+        elif hi_r and not hi_v: return "💎 Κρυμμένοι Θησαυροί"
+        elif not hi_r and hi_v: return "⚠️ Τουριστική Παγίδα"
+        else:                   return "📉 Χαμηλής Απόδοσης"
+
+    df_rv["Quadrant"] = df_rv.apply(assign_quadrant, axis=1)
+
+    QUAD_COLORS = {
+        "⭐ Αστέρια":             "#2ecc71",
+        "💎 Κρυμμένοι Θησαυροί": "#3498db",
+        "⚠️ Τουριστική Παγίδα":  "#e74c3c",
+        "📉 Χαμηλής Απόδοσης":   "#95a5a6",
+    }
+
+    # ── KPIs ──────────────────────────────────────────────────────────────────
+    corr_val = df_rv["Rating"].corr(np.log1p(df_rv["Total_Visitors"]))
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Μουσεία στην ανάλυση",  f"{len(df_rv)}")
+    k2.metric("Μέση Βαθμολογία",       f"{df_rv['Rating'].mean():.2f} ★")
+    k3.metric("Διάμεσος Επισκεπτών",   f"{med_visitors:,.0f}")
+    k4.metric("Συσχέτιση Rating-Επισκ.", f"r = {corr_val:.2f}",
+              help="Pearson r μεταξύ Rating και log(Επισκέπτες). Κοντά στο 0 = ασθενής συσχέτιση.")
+    k5.metric("⭐ Αστέρια / 💎 Θησαυροί",
+              f"{(df_rv['Quadrant']=='⭐ Αστέρια').sum()} / "
+              f"{(df_rv['Quadrant']=='💎 Κρυμμένοι Θησαυροί').sum()}")
+
+    st.caption(
+        f"📌 Κατώφλι Βαθμολογίας: **{med_rating:.1f}** (διάμεσος) | "
+        f"Κατώφλι Επισκεπτών: **{med_visitors:,.0f}** (διάμεσος)"
+    )
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab_q, tab_corr, tab_silent, tab_region, tab_tbl = st.tabs([
+        "🎯 Μήτρα Τεταρτημορίων",
+        "📈 Συσχέτιση",
+        "🤫 Αθόρυβοι Επισκέπτες",
+        "🗺️ Ανά Περιφέρεια",
+        "📋 Πλήρης Πίνακας",
+    ])
+
+    # ════════════════════════════════════════════════════════════════
+    # TAB 1 — ΜΗΤΡΑ ΤΕΤΑΡΤΗΜΟΡΙΩΝ
+    # ════════════════════════════════════════════════════════════════
+    with tab_q:
+        st.markdown(
+            "Κάθε μουσείο κατηγοριοποιείται σε ένα από τα 4 τεταρτημόρια "
+            "με βάση τη **βαθμολογία** και την **επισκεψιμότητά** του σε σχέση "
+            "με τη διάμεσο τιμή."
+        )
+
+        # Legenda
+        lc1, lc2, lc3, lc4 = st.columns(4)
+        lc1.success("⭐ **Αστέρια**\nΥψηλό rating & υψηλή επισκεψιμότητα")
+        lc2.info("💎 **Κρυμμένοι Θησαυροί**\nΥψηλό rating & χαμηλή επισκεψιμότητα")
+        lc3.error("⚠️ **Τουριστική Παγίδα**\nΧαμηλό rating & υψηλή επισκεψιμότητα")
+        lc4.warning("📉 **Χαμηλής Απόδοσης**\nΧαμηλό rating & χαμηλή επισκεψιμότητα")
+
+        fig_quad = px.scatter(
+            df_rv,
+            x="Rating",
+            y="Total_Visitors",
+            size="Ratings_Total",
+            size_max=45,
+            color="Quadrant",
+            color_discrete_map=QUAD_COLORS,
+            hover_name="Museum",
+            hover_data={
+                "Rating":         ":.1f",
+                "Total_Visitors": ":,.0f",
+                "Ratings_Total":  ":,.0f",
+                "Review_Rate":    ":.2f",
+                "Region":         True,
+                "Quadrant":       False,
+            },
+            labels={
+                "Rating":         "Google Rating ★",
+                "Total_Visitors": "Σύνολο Επισκεπτών",
+                "Ratings_Total":  "Αριθμός Κριτικών",
+                "Review_Rate":    "Κριτικές / 1000 Επισκ.",
+                "Region":         "Περιφέρεια",
+            },
+            log_y=True,
+            title="Μήτρα Επισκεψιμότητας — Google Rating",
+        )
+
+        # Γραμμές κατωφλίων
+        fig_quad.add_vline(
+            x=med_rating, line_dash="dash", line_color="gray", line_width=1.5,
+            annotation_text=f"Διάμεσος Rating: {med_rating:.1f}",
+            annotation_position="top right", annotation_font_size=11,
+        )
+        fig_quad.add_hline(
+            y=med_visitors, line_dash="dash", line_color="gray", line_width=1.5,
+            annotation_text=f"Διάμεσος Επισκ.: {med_visitors:,.0f}",
+            annotation_position="right", annotation_font_size=11,
+        )
+        fig_quad.update_layout(
+            height=580,
+            legend=dict(title="Κατηγορία", orientation="h", y=-0.15),
+        )
+        st.plotly_chart(fig_quad, use_container_width=True)
+
+        # Σύνοψη ανά τεταρτημόριο
+        quad_summary = (
+            df_rv.groupby("Quadrant")
+            .agg(
+                Μουσεία        =("Museum",         "count"),
+                Μέσο_Rating    =("Rating",          "mean"),
+                Μέσοι_Επισκέπτες=("Total_Visitors", "mean"),
+                Σύνολο_Κριτικών=("Ratings_Total",  "sum"),
+            )
+            .round({"Μέσο_Rating": 2, "Μέσοι_Επισκέπτες": 0})
+            .reset_index()
+        )
+        with st.expander("📊 Σύνοψη ανά Κατηγορία"):
+            st.dataframe(
+                quad_summary.style.format({
+                    "Μέσο_Rating":         "{:.2f}",
+                    "Μέσοι_Επισκέπτες":    "{:,.0f}",
+                    "Σύνολο_Κριτικών":     "{:,.0f}",
+                }),
+                use_container_width=True,
+            )
+
+    # ════════════════════════════════════════════════════════════════
+    # TAB 2 — ΣΥΣΧΕΤΙΣΗ
+    # ════════════════════════════════════════════════════════════════
+    with tab_corr:
+        col_l, col_r = st.columns([2, 1])
+
+        with col_l:
+            # Scatter με γραμμή τάσης (OLS)
+            import numpy as np
+            log_vis = np.log1p(df_rv["Total_Visitors"])
+            z = np.polyfit(log_vis, df_rv["Rating"], 1)
+            p = np.poly1d(z)
+            x_line = np.linspace(log_vis.min(), log_vis.max(), 200)
+
+            fig_corr = px.scatter(
+                df_rv,
+                x="Total_Visitors",
+                y="Rating",
+                color="Region",
+                hover_name="Museum",
+                hover_data={"Total_Visitors": ":,.0f", "Rating": ":.1f"},
+                labels={
+                    "Total_Visitors": "Σύνολο Επισκεπτών (log)",
+                    "Rating":         "Google Rating ★",
+                },
+                log_x=True,
+                title=f"Συσχέτιση Rating — Επισκεψιμότητα  (r = {corr_val:.2f})",
+                opacity=0.75,
+            )
+            fig_corr.add_scatter(
+                x=np.expm1(x_line), y=p(x_line),
+                mode="lines",
+                line=dict(color="black", dash="dot", width=2),
+                name="Τάση (OLS)",
+                showlegend=True,
+            )
+            fig_corr.update_layout(height=480, legend=dict(orientation="h", y=-0.2))
+            st.plotly_chart(fig_corr, use_container_width=True)
+
+        with col_r:
+            st.markdown("#### 💡 Ερμηνεία")
+            st.markdown(
+                f"Ο συντελεστής συσχέτισης **r = {corr_val:.2f}** δείχνει "
+                f"ότι η βαθμολογία στο Google **δεν καθορίζει** σε σημαντικό βαθμό "
+                f"τον αριθμό επισκεπτών.\n\n"
+                f"Αυτό σημαίνει ότι:\n"
+                f"- Η **φήμη/τοποθεσία** παίζει μεγαλύτερο ρόλο από την ποιότητα\n"
+                f"- Υπάρχουν μουσεία με **εξαιρετική ποιότητα** που παραμένουν άγνωστα\n"
+                f"- Τα μεγάλα αστικά μουσεία συγκεντρώνουν επισκέπτες ανεξάρτητα rating"
+            )
+
+            st.markdown("#### 📐 Στατιστικά")
+            stats_df = pd.DataFrame({
+                "Μέτρο": ["N", "r (log)", "Rating μέσος", "Rating std", "Rating min", "Rating max"],
+                "Τιμή": [
+                    len(df_rv),
+                    f"{corr_val:.3f}",
+                    f"{df_rv['Rating'].mean():.2f}",
+                    f"{df_rv['Rating'].std():.2f}",
+                    f"{df_rv['Rating'].min():.1f}",
+                    f"{df_rv['Rating'].max():.1f}",
+                ]
+            })
+            st.dataframe(stats_df, use_container_width=True, hide_index=True)
+
+    # ════════════════════════════════════════════════════════════════
+    # TAB 3 — ΑΘΟΡΥΒΟΙ ΕΠΙΣΚΕΠΤΕΣ
+    # ════════════════════════════════════════════════════════════════
+    with tab_silent:
+        st.markdown(
+            "Μουσεία με **υψηλή επισκεψιμότητα αλλά ελάχιστες κριτικές** — "
+            "οι επισκέπτες τα επισκέπτονται αλλά δεν τα αξιολογούν διαδικτυακά. "
+            "Αυτά έχουν το μεγαλύτερο περιθώριο βελτίωσης ψηφιακής παρουσίας."
+        )
+
+        # Φίλτρο: μόνο μουσεία με αξιόλογη επισκεψιμότητα
+        vis_threshold = st.slider(
+            "Ελάχιστος αριθμός επισκεπτών:",
+            min_value=10_000, max_value=500_000, value=50_000, step=10_000,
+            format="%,d",
+        )
+        df_silent = (
+            df_rv[df_rv["Total_Visitors"] >= vis_threshold]
+            .sort_values("Review_Rate")
+            .head(20)
+            .copy()
+        )
+
+        fig_silent = px.bar(
+            df_silent,
+            x="Review_Rate",
+            y="Museum",
+            orientation="h",
+            color="Rating",
+            color_continuous_scale="RdYlGn",
+            hover_data={
+                "Total_Visitors": ":,.0f",
+                "Ratings_Total":  ":,.0f",
+                "Review_Rate":    ":.2f",
+                "Region":         True,
+            },
+            labels={
+                "Review_Rate":    "Κριτικές ανά 1.000 Επισκέπτες",
+                "Museum":         "",
+                "Rating":         "Rating ★",
+                "Total_Visitors": "Επισκέπτες",
+                "Ratings_Total":  "Κριτικές",
+            },
+            title="Top 20 «Αθόρυβα» Μουσεία — Χαμηλότερος Δείκτης Κριτικών/Επισκέπτες",
+        )
+        fig_silent.update_layout(
+            height=580,
+            yaxis={"categoryorder": "total ascending"},
+            coloraxis_colorbar=dict(title="Rating ★"),
+        )
+        st.plotly_chart(fig_silent, use_container_width=True)
+
+        st.caption(
+            "📌 Ο δείκτης **Κριτικές / 1.000 Επισκέπτες** μετρά πόσοι επισκέπτες "
+            "αφήνουν κριτική στο Google Maps. Χαμηλός δείκτης = ψηφιακά αόρατο μουσείο."
+        )
+
+    # ════════════════════════════════════════════════════════════════
+    # TAB 4 — ΑΝΑ ΠΕΡΙΦΕΡΕΙΑ
+    # ════════════════════════════════════════════════════════════════
+    with tab_region:
+        col_box, col_bar = st.columns(2)
+
+        with col_box:
+            # Box plot ratings ανά περιφέρεια
+            region_order = (
+                df_rv.groupby("Region")["Rating"]
+                .median()
+                .sort_values(ascending=False)
+                .index.tolist()
+            )
+            fig_box = px.box(
+                df_rv,
+                x="Rating",
+                y="Region",
+                points="all",
+                color="Region",
+                hover_name="Museum",
+                category_orders={"Region": region_order},
+                labels={"Rating": "Google Rating ★", "Region": "Περιφέρεια"},
+                title="Κατανομή Ratings ανά Περιφέρεια",
+            )
+            fig_box.update_layout(
+                height=560,
+                showlegend=False,
+                yaxis_title="",
+            )
+            st.plotly_chart(fig_box, use_container_width=True)
+
+        with col_bar:
+            # Stacked bar: σύνθεση τεταρτημορίων ανά περιφέρεια
+            quad_by_region = (
+                df_rv.groupby(["Region", "Quadrant"])
+                .size()
+                .reset_index(name="Count")
+            )
+            fig_stack = px.bar(
+                quad_by_region,
+                x="Count",
+                y="Region",
+                color="Quadrant",
+                color_discrete_map=QUAD_COLORS,
+                orientation="h",
+                labels={"Count": "Μουσεία", "Region": "Περιφέρεια"},
+                title="Σύνθεση Κατηγοριών ανά Περιφέρεια",
+            )
+            fig_stack.update_layout(
+                height=560,
+                yaxis={"categoryorder": "total ascending"},
+                yaxis_title="",
+                legend=dict(title="", orientation="h", y=-0.15),
+            )
+            st.plotly_chart(fig_stack, use_container_width=True)
+
+        # Αναλυτικός πίνακας ανά περιφέρεια
+        with st.expander("📋 Αναλυτικά ανά Περιφέρεια"):
+            region_stats = (
+                df_rv.groupby("Region")
+                .agg(
+                    Μουσεία         =("Museum",         "count"),
+                    Μέσο_Rating     =("Rating",          "mean"),
+                    Διάμεσος_Rating =("Rating",          "median"),
+                    Σύνολο_Επισκ    =("Total_Visitors",  "sum"),
+                    Σύνολο_Κριτικών =("Ratings_Total",   "sum"),
+                )
+                .round({"Μέσο_Rating": 2, "Διάμεσος_Rating": 2})
+                .sort_values("Μέσο_Rating", ascending=False)
+                .reset_index()
+            )
+            st.dataframe(
+                region_stats.style.format({
+                    "Μέσο_Rating":      "{:.2f}",
+                    "Διάμεσος_Rating":  "{:.2f}",
+                    "Σύνολο_Επισκ":     "{:,.0f}",
+                    "Σύνολο_Κριτικών":  "{:,.0f}",
+                }),
+                use_container_width=True,
+            )
+
+    # ════════════════════════════════════════════════════════════════
+    # TAB 5 — ΠΛΗΡΗΣ ΠΙΝΑΚΑΣ
+    # ════════════════════════════════════════════════════════════════
+    with tab_tbl:
+        # Φίλτρο κατηγορίας
+        quad_filter = st.multiselect(
+            "Φίλτρο κατηγορίας:",
+            options=list(QUAD_COLORS.keys()),
+            default=list(QUAD_COLORS.keys()),
+        )
+        df_show = df_rv[df_rv["Quadrant"].isin(quad_filter)].copy()
+        df_show = df_show[[
+            "Museum", "Region", "Rating", "Ratings_Total",
+            "Total_Visitors", "Review_Rate", "Quadrant", "Google_Maps_URL"
+        ]].sort_values("Total_Visitors", ascending=False).reset_index(drop=True)
+        df_show.index += 1
+
+        def color_quadrant(val):
+            colors = {
+                "⭐ Αστέρια":             "background-color:#d5f5e3",
+                "💎 Κρυμμένοι Θησαυροί": "background-color:#d6eaf8",
+                "⚠️ Τουριστική Παγίδα":  "background-color:#fadbd8",
+                "📉 Χαμηλής Απόδοσης":   "background-color:#f2f3f4",
+            }
+            return colors.get(val, "")
+
+        st.dataframe(
+            df_show.style
+            .format({
+                "Rating":         "{:.1f}",
+                "Ratings_Total":  "{:,.0f}",
+                "Total_Visitors": "{:,.0f}",
+                "Review_Rate":    "{:.2f}",
+            })
+            .applymap(color_quadrant, subset=["Quadrant"]),
+            use_container_width=True,
+            height=500,
+        )
+        st.caption(f"Εμφανίζονται {len(df_show)} από {len(df_rv)} μουσεία")
+
+        excel_rv = to_excel(df_show.drop(columns=["Google_Maps_URL"], errors="ignore"))
+        st.download_button(
+            "📥 Λήψη Excel",
+            data=excel_rv,
+            file_name="museums_ratings_visitors.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
