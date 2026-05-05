@@ -33,10 +33,16 @@ def load_data():
 def load_places():
     import os
     if os.path.exists('museums_place_ids.csv'):
-        df_p = pd.read_csv('museums_place_ids.csv')
-        df_p = df_p[['Museum', 'Region', 'Place_ID', 'Google_Maps_URL', 'Rating', 'Ratings_Total', 'Address']].copy()
+        df_p = pd.read_csv('museums_place_ids.csv', encoding='utf-8-sig')
+        df_p = df_p[[
+            'Museum', 'Region', 'Regional_Unit', 'Place_ID',
+            'Google_Maps_URL', 'Rating', 'Ratings_Total', 'Address',
+            'Lat', 'Lng'          # ← νέες στήλες
+        ]].copy()
         df_p['Rating']        = pd.to_numeric(df_p['Rating'],        errors='coerce')
         df_p['Ratings_Total'] = pd.to_numeric(df_p['Ratings_Total'], errors='coerce')
+        df_p['Lat']           = pd.to_numeric(df_p['Lat'],           errors='coerce')
+        df_p['Lng']           = pd.to_numeric(df_p['Lng'],           errors='coerce')
         return df_p
     return pd.DataFrame()
 
