@@ -1013,3 +1013,253 @@ with col_dl2:
         file_name='museum_stats.xlsx',
         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+# ═══════════════════════════════════════════════════════════════
+# 16. ΓΕΩΓΡΑΦΙΚΗ ΚΑΤΑΝΟΜΗ ΜΟΥΣΕΙΩΝ
+# ═══════════════════════════════════════════════════════════════
+
+st.divider()
+st.subheader("🗺️ Γεωγραφική Κατανομή Μουσείων")
+
+import json, os
+
+# ── Mapping: Regional_Unit (γενική) → name_greek στο GeoJSON (ονομαστική) ──
+RU_TO_GEOJSON = {
+    "Αιτωλοακαρνανίας": "Αιτωλοακαρνανία",
+    "Αργολίδας":        "Αργολίδα",
+    "Αρκαδίας":         "Αρκαδία",
+    "Αττικής":          "Αθήνα",           # Αττική → κεντρικός πυρήνας
+    "Αχαΐας":           "Αχαΐα",
+    "Βοιωτίας":         "Βοιωτία",
+    "Γρεβενών":         "Γρεβενά",
+    "Δράμας":           "Δράμα",
+    "Δωδεκανήσου":      "Δωδεκάνησα",
+    "Εύβοιας":          "Εύβοια",
+    "Ευρυτανίας":       "Ευρυτανία",
+    "Ζακύνθου":         "Ζάκυνθος",
+    "Ηλείας":           "Ηλεία",
+    "Ημαθίας":          "Ημαθία",
+    "Ηρακλείου":        "Ηράκλειο",
+    "Θεσπρωτίας":       "Θεσπρωτία",
+    "Θεσσαλονίκης":     "Θεσσαλονίκη",
+    "Ιωαννίνων":        "Ιωάννινα",
+    "Κέρκυρας":         "Κέρκυρα",
+    "Καβάλας":          "Καβάλα",
+    "Καρδίτσας":        "Καρδίτσα",
+    "Καστοριάς":        "Καστοριά",
+    "Κεφαλληνίας":      "Κεφαλλονία",
+    "Κιλκίς":           "Κιλκίς",
+    "Κοζάνης":          "Κοζάνη",
+    "Κορινθίας":        "Κόρινθος",
+    "Κυκλάδων":         "Κυκλάδες",
+    "Λάρισας":          "Λάρισα",
+    "Λέσβου":           "Λέσβος",
+    "Λακωνίας":         "Λακωνία",
+    "Λασιθίου":         "Λασίθιο",
+    "Λευκάδας":         "Λευκάδα",
+    "Μαγνησίας":        "Μαγνησία",
+    "Μεσσηνίας":        "Μεσσηνία",
+    "Ξάνθης":           "Ξάνθη",
+    "Πέλλας":           "Πέλλα",
+    "Πιερίας":          "Πιερία",
+    "Πρέβεζας":         "Πρέβεζα",
+    "Ρεθύμνου":         "Ρέθυμνο",
+    "Ροδόπης":          "Ροδόπη",
+    "Σάμου":            "Σάμος",
+    "Σερρών":           "Σέρρες",
+    "Φθιώτιδας":        "Φθιώτιδα",
+    "Φλώρινας":         "Φλώρινα",
+    "Φωκίδας":          "Φωκίδα",
+    "Χίου":             "Χίος",
+    "Χαλκιδικής":       "Χαλκιδική",
+    "Χανίων":           "Χανιά",
+    "Άρτας":            "Άρτα",
+    "Έβρου":            "Έβρος",
+}
+
+@st.cache_data
+def load_geojson():
+    if os.path.exists("greece_regions.geojson"):
+        with open("greece_regions.geojson", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+@st.cache_data
+def load_places_map():
+    if not os.path.exists("museums_place_ids.csv"):
+        return pd.DataFrame()
+    df_m = pd.read_csv("museums_place_ids.csv", encoding="utf-8-sig")
+    df_m["Rating"]        = pd.to_numeric(df_m.get("Rating"),        errors="coerce")
+    df_m["Ratings_Total"] = pd.to_numeric(df_m.get("Ratings_Total"), errors="coerce")
+    for col in ("Lat", "Lng"):
+        if col in df_m.columns:
+            df_m[col] = pd.to_numeric(df_m[col], errors="coerce")
+    return df_m
+
+geojson_data = load_geojson()
+df_map       = load_places_map()
+
+if geojson_data is None:
+    st.warning("Δεν βρέθηκε το αρχείο greece_regions.geojson.")
+else:
+    # ── Υπολογισμός επισκεψιμότητας ανά Περιφερειακή Ενότητα ──────────────────
+    visitors_by_ru = (
+        final_df.groupby("Regional_Unit")["Visitors"]
+        .sum()
+        .reset_index()
+        .rename(columns={"Visitors": "Total_Visitors"})
+    )
+    visitors_by_ru["GeoName"] = visitors_by_ru["Regional_Unit"].map(RU_TO_GEOJSON)
+
+    # Αριθμός μουσείων ανά ΠΕ
+    museum_count = (
+        final_df.groupby("Regional_Unit")["Museum"]
+        .nunique()
+        .reset_index()
+        .rename(columns={"Museum": "Museum_Count"})
+    )
+    visitors_by_ru = visitors_by_ru.merge(museum_count, on="Regional_Unit", how="left")
+
+    # ── Tabs χάρτη ─────────────────────────────────────────────────────────────
+    has_coords = (
+        not df_map.empty
+        and "Lat" in df_map.columns
+        and df_map["Lat"].notna().sum() > 10
+    )
+
+    map_tabs = st.tabs(["🌡️ Χάρτης Επισκεψιμότητας (Χωροπλήθης)", "📍 Διασπορά Μουσείων"])
+
+    # ══ TAB 1: ΧΩΡΟΠΛΗΘΗΣ ΧΑΡΤΗΣ ════════════════════════════════════════════
+    with map_tabs[0]:
+        st.caption(
+            "Κάθε Περιφερειακή Ενότητα χρωματίζεται ανάλογα με τον "
+            "συνολικό αριθμό επισκεπτών στην επιλεγμένη περίοδο."
+        )
+
+        # Για τον χωροπλήθη χρειαζόμαστε το id να ταιριάζει με το featureidkey
+        geo_df = visitors_by_ru.dropna(subset=["GeoName"]).copy()
+
+        fig_choro = px.choropleth_mapbox(
+            geo_df,
+            geojson=geojson_data,
+            locations="GeoName",
+            featureidkey="properties.name_greek",
+            color="Total_Visitors",
+            hover_name="Regional_Unit",
+            hover_data={
+                "GeoName":       False,
+                "Total_Visitors": ":,.0f",
+                "Museum_Count":  True,
+            },
+            labels={
+                "Total_Visitors": "Επισκέπτες",
+                "Museum_Count":   "Μουσεία",
+            },
+            color_continuous_scale="YlOrRd",
+            mapbox_style="carto-positron",
+            zoom=5.2,
+            center={"lat": 39.0, "lon": 22.5},
+            opacity=0.75,
+            title="Συνολική Επισκεψιμότητα ανά Περιφερειακή Ενότητα",
+        )
+        fig_choro.update_layout(
+            margin={"r": 0, "t": 40, "l": 0, "b": 0},
+            coloraxis_colorbar=dict(title="Επισκέπτες"),
+        )
+        st.plotly_chart(fig_choro, use_container_width=True)
+
+        # Πίνακας στατιστικών ανά ΠΕ
+        with st.expander("📋 Αναλυτικός Πίνακας ανά Περιφερειακή Ενότητα"):
+            tbl = (
+                geo_df[["Regional_Unit", "Museum_Count", "Total_Visitors"]]
+                .sort_values("Total_Visitors", ascending=False)
+                .reset_index(drop=True)
+            )
+            tbl.index += 1
+            st.dataframe(
+                tbl.style.format({
+                    "Total_Visitors": "{:,.0f}",
+                    "Museum_Count":   "{:,.0f}",
+                }),
+                use_container_width=True,
+            )
+
+    # ══ TAB 2: SCATTER ΧΑΡΤΗΣ ΜΟΥΣΕΙΩΝ ══════════════════════════════════════
+    with map_tabs[1]:
+        if not has_coords:
+            st.info(
+                "⚠️ Δεν βρέθηκαν συντεταγμένες στο museums_place_ids.csv.\n\n"
+                "Εκτέλεσε τοπικά το **geocode_museums.py** για να τις προσθέσεις "
+                "αυτόματα, και ανέβασε το ενημερωμένο CSV στο repository."
+            )
+        else:
+            # Συγχώνευση με επισκεψιμότητα
+            vis_total = (
+                final_df.groupby("Museum")["Visitors"].sum().reset_index()
+                .rename(columns={"Visitors": "Total_Visitors"})
+            )
+            df_scatter = df_map.merge(vis_total, on="Museum", how="left")
+            df_scatter  = df_scatter.dropna(subset=["Lat", "Lng"]).copy()
+            df_scatter["Total_Visitors"] = df_scatter["Total_Visitors"].fillna(0)
+            df_scatter["Rating"]         = df_scatter["Rating"].fillna(0)
+
+            # Επιλογή χρωματισμού
+            color_by = st.radio(
+                "Χρωματισμός σημείων:",
+                ["Google Rating", "Επισκεψιμότητα"],
+                horizontal=True,
+            )
+
+            if color_by == "Google Rating":
+                color_col   = "Rating"
+                color_label = "⭐ Rating"
+                color_scale = "RdYlGn"
+                hover_extra = {"Rating": ":.1f", "Total_Visitors": ":,.0f"}
+            else:
+                color_col   = "Total_Visitors"
+                color_label = "Επισκέπτες"
+                color_scale = "YlOrRd"
+                hover_extra = {"Rating": ":.1f", "Total_Visitors": ":,.0f"}
+
+            fig_scatter = px.scatter_mapbox(
+                df_scatter,
+                lat="Lat",
+                lon="Lng",
+                size="Total_Visitors",
+                size_max=35,
+                color=color_col,
+                color_continuous_scale=color_scale,
+                hover_name="Museum",
+                hover_data={
+                    "Lat":   False,
+                    "Lng":   False,
+                    **hover_extra,
+                    "Regional_Unit": True,
+                    "Address":       True,
+                },
+                labels={
+                    "Total_Visitors": "Επισκέπτες",
+                    "Rating":         "⭐ Rating",
+                    "Regional_Unit":  "Περιφερειακή Ενότητα",
+                    "Address":        "Διεύθυνση",
+                },
+                mapbox_style="carto-positron",
+                zoom=5.2,
+                center={"lat": 39.0, "lon": 22.5},
+                title=f"Διασπορά Μουσείων — χρωματισμός: {color_by}",
+            )
+            fig_scatter.update_layout(
+                margin={"r": 0, "t": 40, "l": 0, "b": 0},
+                coloraxis_colorbar=dict(title=color_label),
+            )
+            st.plotly_chart(fig_scatter, use_container_width=True)
+
+            # Σύνοψη
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("Μουσεία στον χάρτη", f"{len(df_scatter):,}")
+            col_m2.metric(
+                "Χωρίς συντεταγμένες",
+                f"{df_map['Lat'].isna().sum():,}",
+            )
+            top_museum = df_scatter.loc[df_scatter["Total_Visitors"].idxmax(), "Museum"] if len(df_scatter) > 0 else "—"
+            col_m3.metric("Πρώτο σε επισκέπτες", top_museum[:30])
