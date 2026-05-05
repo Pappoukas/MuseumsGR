@@ -1658,7 +1658,7 @@ else:
                 "Total_Visitors": "{:,.0f}",
                 "Review_Rate":    "{:.2f}",
             })
-            .applymap(color_quadrant, subset=["Quadrant"]),
+            .map(color_quadrant, subset=["Quadrant"]),
             use_container_width=True,
             height=500,
         )
