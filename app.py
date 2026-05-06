@@ -1266,6 +1266,376 @@ else:
 
 st.divider()
 
+st.divider()
+
+# ═══════════════════════════════════════════════════════════════
+# 18. CLUSTERING ΜΟΥΣΕΙΩΝ
+# ═══════════════════════════════════════════════════════════════
+st.subheader("🔵 Clustering Μουσείων")
+st.markdown(
+    "Ανακαλύψτε ομάδες μουσείων με παρόμοια χαρακτηριστικά — "
+    "γεωγραφική εγγύτητα ή κοινό προφίλ επισκεψιμότητας."
+)
+
+try:
+    from sklearn.cluster import KMeans
+    from sklearn.preprocessing import StandardScaler
+    sklearn_ok = True
+except ImportError:
+    sklearn_ok = False
+    st.warning("Απαιτείται `scikit-learn`. Πρόσθεσέ το στο `requirements.txt`.")
+
+if sklearn_ok and not df_places.empty:
+
+    # ── Προετοιμασία δεδομένων ────────────────────────────────────────────────
+    @st.cache_data
+    def build_cluster_df(_df_places_hash):
+        dp = df_places.copy()
+        dp["Lat"] = pd.to_numeric(dp["Lat"], errors="coerce")
+        dp["Lng"] = pd.to_numeric(dp["Lng"], errors="coerce")
+        dp["Rating"] = pd.to_numeric(dp["Rating"], errors="coerce")
+
+        # Εποχική κατανομή
+        monthly_raw = (
+            df.groupby(["Museum", "Month"])["Visitors"]
+            .sum().reset_index()
+        )
+        seasonal = (
+            monthly_raw
+            .pivot(index="Museum", columns="Month", values="Visitors")
+            .fillna(0)
+        )
+        seasonal_norm = seasonal.div(
+            seasonal.sum(axis=1).replace(0, np.nan), axis=0
+        ).fillna(0)
+        seasonal_norm.columns = [f"m{c}" for c in seasonal_norm.columns]
+
+        # Στατιστικά επισκεψιμότητας
+        vis = (
+            df.groupby("Museum")["Visitors"]
+            .agg(Total_Visitors="sum", Mean_Monthly="mean", Std_Monthly="std")
+            .reset_index()
+        )
+        vis["CV"] = (
+            vis["Std_Monthly"] / vis["Mean_Monthly"].replace(0, np.nan)
+        ).fillna(0)
+        vis["Log_Visitors"] = np.log1p(vis["Total_Visitors"])
+
+        merged = dp.merge(vis, on="Museum", how="inner")
+        merged = merged.merge(seasonal_norm.reset_index(), on="Museum", how="inner")
+        merged = merged.dropna(subset=["Lat", "Lng"])
+
+        merged["Summer_Pct"] = merged[["m6","m7","m8"]].sum(axis=1)
+        merged["Winter_Pct"] = merged[["m12","m1","m2"]].sum(axis=1)
+        merged["Spring_Pct"] = merged[["m3","m4","m5"]].sum(axis=1)
+        merged["Autumn_Pct"] = merged[["m9","m10","m11"]].sum(axis=1)
+
+        return merged
+
+    df_cl = build_cluster_df(len(df_places))
+
+    tab_geo, tab_beh, tab_combo = st.tabs([
+        "🗺️ Γεωγραφικό Clustering",
+        "📊 Behavioral Clustering",
+        "🔀 Συνδυαστικός Χάρτης",
+    ])
+
+    # ════════════════════════════════════════════════════════════════════
+    # TAB 1 — ΓΕΩΓΡΑΦΙΚΟ CLUSTERING
+    # ════════════════════════════════════════════════════════════════════
+    with tab_geo:
+        st.markdown(
+            "Ομαδοποίηση με βάση τις **γεωγραφικές συντεταγμένες** (KMeans). "
+            "Αποκαλύπτει φυσικές ζώνες συγκέντρωσης μουσείων."
+        )
+
+        k_geo = st.slider(
+            "Αριθμός γεωγραφικών ομάδων (k):",
+            min_value=3, max_value=8, value=6, key="k_geo",
+        )
+
+        geo_feats = df_cl[["Lat","Lng"]].values
+        km_geo = KMeans(n_clusters=k_geo, random_state=42, n_init=10)
+        df_cl["Geo_Cluster"] = km_geo.fit_predict(geo_feats).astype(str)
+
+        GEO_COLORS = [
+            "#e74c3c","#3498db","#2ecc71","#f39c12",
+            "#9b59b6","#1abc9c","#e67e22","#34495e",
+        ]
+        color_map_geo = {str(i): GEO_COLORS[i % len(GEO_COLORS)] for i in range(k_geo)}
+
+        fig_geo_map = px.scatter_mapbox(
+            df_cl,
+            lat="Lat", lon="Lng",
+            color="Geo_Cluster",
+            color_discrete_map=color_map_geo,
+            hover_name="Museum",
+            hover_data={
+                "Lat": False, "Lng": False,
+                "Region": True,
+                "Total_Visitors": ":,.0f",
+                "Rating": ":.1f",
+            },
+            labels={"Geo_Cluster": "Ζώνη", "Total_Visitors": "Επισκέπτες", "Rating": "★"},
+            size="Total_Visitors",
+            size_max=30,
+            mapbox_style="carto-positron",
+            zoom=5.0,
+            center={"lat": 38.9, "lon": 23.5},
+            title=f"Γεωγραφικές Ζώνες Μουσείων (k={k_geo})",
+        )
+        fig_geo_map.update_layout(
+            height=540,
+            margin={"r":0,"t":40,"l":0,"b":0},
+            legend=dict(title="Ζώνη", orientation="h", y=-0.08),
+        )
+        st.plotly_chart(fig_geo_map, use_container_width=True)
+
+        # Σύνοψη ζωνών
+        geo_summary = (
+            df_cl.groupby("Geo_Cluster")
+            .agg(
+                Μουσεία            = ("Museum",         "count"),
+                Περιοχές           = ("Region",         lambda x: " · ".join(x.value_counts().head(2).index)),
+                Μέσ_Επισκέπτες    = ("Total_Visitors",  "mean"),
+                Μέσ_Rating         = ("Rating",          "mean"),
+            )
+            .round({"Μέσ_Επισκέπτες": 0, "Μέσ_Rating": 2})
+            .reset_index()
+            .rename(columns={"Geo_Cluster": "Ζώνη"})
+        )
+        with st.expander("📋 Σύνοψη Γεωγραφικών Ζωνών"):
+            st.dataframe(
+                geo_summary.style.format({
+                    "Μέσ_Επισκέπτες": "{:,.0f}",
+                    "Μέσ_Rating":     "{:.2f}",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+
+    # ════════════════════════════════════════════════════════════════════
+    # TAB 2 — BEHAVIORAL CLUSTERING
+    # ════════════════════════════════════════════════════════════════════
+    with tab_beh:
+        st.markdown(
+            "Ομαδοποίηση με βάση το **προφίλ επισκεψιμότητας**: "
+            "εποχικότητα, μέγεθος κοινού, ομοιομορφία ροής, Google Rating."
+        )
+
+        col_k, col_min = st.columns([1, 2])
+        with col_k:
+            k_beh = st.slider(
+                "Αριθμός ομάδων (k):", min_value=3, max_value=6, value=4, key="k_beh",
+            )
+        with col_min:
+            min_vis = st.slider(
+                "Ελάχιστοι συνολικοί επισκέπτες (φίλτρο):",
+                0, 50_000, 1_000, step=1_000, format="%,d",
+            )
+
+        df_beh = df_cl[df_cl["Total_Visitors"] >= min_vis].copy()
+
+        BEH_FEATURES = ["Log_Visitors","CV","Summer_Pct","Winter_Pct","Spring_Pct","Rating"]
+        BEH_LABELS   = ["log(Επισκ.)","Εποχικότητα","Καλοκαίρι","Χειμώνας","Άνοιξη","Rating"]
+
+        scaler  = StandardScaler()
+        beh_mat = scaler.fit_transform(df_beh[BEH_FEATURES].fillna(0))
+
+        km_beh  = KMeans(n_clusters=k_beh, random_state=42, n_init=10)
+        df_beh["Beh_Cluster"] = km_beh.fit_predict(beh_mat).astype(str)
+
+        # Αυτόματη ετικέτα ανά cluster (με βάση χαρακτηριστικά)
+        centers_orig = scaler.inverse_transform(km_beh.cluster_centers_)
+        centers_df   = pd.DataFrame(centers_orig, columns=BEH_FEATURES)
+        centers_df["k"] = range(k_beh)
+
+        def auto_label(row):
+            vis_raw = np.expm1(row["Log_Visitors"])
+            if vis_raw > 1_500_000:
+                return "🏛️ Πρωτεύοντα"
+            elif row["Summer_Pct"] > 0.45:
+                return "☀️ Καλοκαιρινά"
+            elif row["Winter_Pct"] > 0.14 or row["CV"] < 0.85:
+                return "🏙️ Σταθερά Αστικά"
+            elif row["Rating"] < 4.0:
+                return "⚠️ Χαμηλής Απόδοσης"
+            else:
+                return "🌿 Μεικτά"
+
+        centers_df["Label"] = centers_df.apply(auto_label, axis=1)
+        label_map = dict(zip(centers_df["k"].astype(str), centers_df["Label"]))
+        df_beh["Cluster_Label"] = df_beh["Beh_Cluster"].map(label_map)
+
+        BEH_COLORS = {
+            "🏛️ Πρωτεύοντα":    "#2c3e50",
+            "☀️ Καλοκαιρινά":   "#e67e22",
+            "🏙️ Σταθερά Αστικά":"#2980b9",
+            "⚠️ Υποαπόδοτα":    "#e74c3c",
+            "🌿 Μεικτά":         "#27ae60",
+        }
+
+        col_radar, col_bar = st.columns([1, 1])
+
+        with col_radar:
+            # Radar chart για κάθε cluster
+            import plotly.graph_objects as go
+
+            radar_cols  = ["Summer_Pct","Autumn_Pct","Winter_Pct","Spring_Pct","CV","Rating"]
+            radar_names = ["Καλοκαίρι %","Φθινόπωρο %","Χειμώνας %","Άνοιξη %","Εποχικότητα","Rating"]
+
+            fig_radar = go.Figure()
+            for _, crow in centers_df.iterrows():
+                label  = crow["Label"]
+                values = []
+                for col, name in zip(radar_cols, radar_names):
+                    v = crow[col]
+                    if col in ("Summer_Pct","Autumn_Pct","Winter_Pct","Spring_Pct"):
+                        v = round(v * 100, 1)         # → %
+                    elif col == "Rating":
+                        v = round((v - 3) / 2 * 100, 1)  # normalize 3-5 → 0-100
+                    else:
+                        v = round(min(v * 50, 100), 1)   # CV: 0-2 → 0-100
+                    values.append(v)
+                values.append(values[0])  # κλείσιμο polygon
+                names_closed = radar_names + [radar_names[0]]
+
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=values, theta=names_closed,
+                    fill="toself", name=label,
+                    line=dict(color=BEH_COLORS.get(label, "#7f8c8d")),
+                    opacity=0.65,
+                ))
+
+            fig_radar.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                showlegend=True,
+                legend=dict(orientation="h", y=-0.15),
+                title="Προφίλ Ομάδων (Radar)",
+                height=420,
+            )
+            st.plotly_chart(fig_radar, use_container_width=True)
+
+        with col_bar:
+            # Bar chart: μέση επισκεψιμότητα ανά cluster
+            beh_agg = (
+                df_beh.groupby("Cluster_Label")
+                .agg(
+                    Μουσεία     =("Museum",         "count"),
+                    Μέσ_Επισκ  =("Total_Visitors",  "mean"),
+                    Μέσ_Rating  =("Rating",          "mean"),
+                    Μέσ_Καλοκ  =("Summer_Pct",      "mean"),
+                )
+                .reset_index()
+                .sort_values("Μέσ_Επισκ", ascending=False)
+            )
+
+            fig_beh_bar = px.bar(
+                beh_agg,
+                x="Cluster_Label", y="Μέσ_Επισκ",
+                color="Cluster_Label",
+                color_discrete_map=BEH_COLORS,
+                text="Μουσεία",
+                labels={
+                    "Cluster_Label": "Κατηγορία",
+                    "Μέσ_Επισκ": "Μέσοι Επισκέπτες",
+                },
+                title="Μέση Επισκεψιμότητα ανά Κατηγορία",
+            )
+            fig_beh_bar.update_traces(texttemplate="%{text} μουσεία", textposition="outside")
+            fig_beh_bar.update_layout(
+                showlegend=False, height=420,
+                yaxis=dict(tickformat=",.0f"),
+                xaxis_title="",
+            )
+            st.plotly_chart(fig_beh_bar, use_container_width=True)
+
+        # Αναλυτικός πίνακας
+        with st.expander("📋 Αναλυτικά Μουσεία ανά Κατηγορία"):
+            tbl_beh = (
+                df_beh[["Museum","Region","Cluster_Label",
+                         "Total_Visitors","Rating","Summer_Pct","CV"]]
+                .sort_values(["Cluster_Label","Total_Visitors"], ascending=[True, False])
+                .reset_index(drop=True)
+            )
+            tbl_beh.index += 1
+            st.dataframe(
+                tbl_beh.style.format({
+                    "Total_Visitors": "{:,.0f}",
+                    "Rating":         "{:.1f}",
+                    "Summer_Pct":     "{:.1%}",
+                    "CV":             "{:.2f}",
+                }),
+                use_container_width=True, height=400,
+            )
+
+    # ════════════════════════════════════════════════════════════════════
+    # TAB 3 — ΣΥΝΔΥΑΣΤΙΚΟΣ ΧΑΡΤΗΣ
+    # ════════════════════════════════════════════════════════════════════
+    with tab_combo:
+        st.markdown(
+            "Τα μουσεία **στον χάρτη** χρωματίζονται με βάση την **behavioral κατηγορία** τους. "
+            "Αποκαλύπτει αν παρόμοια μουσεία βρίσκονται κοντά γεωγραφικά ή διασκορπισμένα."
+        )
+
+        # Επαναλαμβάνουμε τo behavioral clustering για k=4 (σταθερό για τον χάρτη)
+        df_combo = df_cl[df_cl["Total_Visitors"] >= 1000].copy()
+        beh_mat2 = StandardScaler().fit_transform(df_combo[BEH_FEATURES].fillna(0))
+        df_combo["Beh_Cluster"] = KMeans(n_clusters=4, random_state=42, n_init=10).fit_predict(beh_mat2).astype(str)
+
+        # Ετικέτες με βάση χαρακτηριστικά cluster
+        for c in df_combo["Beh_Cluster"].unique():
+            sub = df_combo[df_combo["Beh_Cluster"]==c]
+            lbl = auto_label(pd.Series({
+                "Log_Visitors": sub["Log_Visitors"].mean(),
+                "Summer_Pct":   sub["Summer_Pct"].mean(),
+                "Winter_Pct":   sub["Winter_Pct"].mean(),
+                "Rating":       sub["Rating"].mean(),
+                "CV":           sub["CV"].mean(),
+            }))
+            df_combo.loc[df_combo["Beh_Cluster"]==c, "Cluster_Label"] = lbl
+
+        fig_combo = px.scatter_mapbox(
+            df_combo,
+            lat="Lat", lon="Lng",
+            color="Cluster_Label",
+            color_discrete_map=BEH_COLORS,
+            hover_name="Museum",
+            hover_data={
+                "Lat": False, "Lng": False,
+                "Region":         True,
+                "Total_Visitors": ":,.0f",
+                "Rating":         ":.1f",
+                "Summer_Pct":     ":.1%",
+            },
+            size="Total_Visitors",
+            size_max=35,
+            labels={
+                "Cluster_Label":  "Κατηγορία",
+                "Total_Visitors": "Επισκέπτες",
+                "Rating":         "Rating ★",
+                "Summer_Pct":     "Καλοκαίρι %",
+            },
+            mapbox_style="carto-positron",
+            zoom=5.0,
+            center={"lat": 38.9, "lon": 23.5},
+            title="Γεωγραφική Κατανομή Behavioral Clusters",
+        )
+        fig_combo.update_layout(
+            height=580,
+            margin={"r":0,"t":40,"l":0,"b":0},
+            legend=dict(title="Κατηγορία", orientation="h", y=-0.08),
+        )
+        st.plotly_chart(fig_combo, use_container_width=True)
+
+        # Insight box
+        st.info(
+            "**Πώς να διαβάσεις τον χάρτη:** "
+            "Αν τα καλοκαιρινά μουσεια βρίσκονται κυρίως σε νησιά και παράκτιες περιοχές, "
+            "επιβεβαιώνεται ο τουριστικός χαρακτήρας τους. "
+            "Αν τα σταθερά αστικά συγκεντρώνονται σε Αθήνα/Θεσσαλονίκη, "
+            "επιβεβαιώνεται η αστική διάρθρωση της επισκεψιμότητας."
+        )
+
 # ═══════════════════════════════════════════════════════════════
 # 17. ΣΥΝΔΥΑΣΤΙΚΗ ΑΝΑΛΥΣΗ ΕΠΙΣΚΕΨΙΜΟΤΗΤΑΣ & GOOGLE RATINGS
 # ═══════════════════════════════════════════════════════════════
