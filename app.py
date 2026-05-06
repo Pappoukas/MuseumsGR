@@ -2867,7 +2867,7 @@ with tab_covid:
                 f"Επισκ.{BASE_YEAR}": "{:,.0f}",
                 f"Επισκ.{comp_yr}":   "{:,.0f}",
                 "Recovery":            "{:.1f}%",
-            }).applymap(
+            }).map(
                 lambda v: f"color: {STATUS_COLORS.get(v,'')}" if v in STATUS_COLORS else "",
                 subset=["Status"]
             ),
