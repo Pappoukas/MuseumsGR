@@ -2517,3 +2517,467 @@ with tab_rank:
             file_name="museum_trends.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+st.divider()
+
+# ═══════════════════════════════════════════════════════════════
+# 20. ΧΡΟΝΙΚΕΣ ΑΝΑΛΥΣΕΙΣ
+# ═══════════════════════════════════════════════════════════════
+st.subheader("⏱️ Χρονικές Αναλύσεις")
+
+MONTH_NAMES_FULL = {
+    1:"Ιανουάριος", 2:"Φεβρουάριος", 3:"Μάρτιος",    4:"Απρίλιος",
+    5:"Μάιος",      6:"Ιούνιος",     7:"Ιούλιος",     8:"Αύγουστος",
+    9:"Σεπτέμβριος",10:"Οκτώβριος", 11:"Νοέμβριος",  12:"Δεκέμβριος",
+}
+MONTH_SHORT = {k: v[:3] for k, v in MONTH_NAMES_FULL.items()}
+SEASONS = {
+    "Χειμώνας": [12, 1, 2],
+    "Άνοιξη":   [3, 4, 5],
+    "Καλοκαίρι":[6, 7, 8],
+    "Φθινόπωρο":[9, 10, 11],
+}
+SEASON_COLORS = {
+    "Χειμώνας":  "#3498db",
+    "Άνοιξη":    "#2ecc71",
+    "Καλοκαίρι": "#e67e22",
+    "Φθινόπωρο": "#e74c3c",
+}
+
+def get_season(month):
+    for s, months in SEASONS.items():
+        if month in months:
+            return s
+    return "?"
+
+tab_dec, tab_seas, tab_covid, tab_polar = st.tabs([
+    "📅 Δεκαετίες",
+    "🌊 Εξέλιξη Εποχικότητας",
+    "🔄 Post-COVID Ανάκαμψη",
+    "🧭 Peak Μήνες ανά Περιφέρεια",
+])
+
+# ════════════════════════════════════════════════════════════════════
+# TAB 1 — ΔΕΚΑΕΤΙΑΚΗ ΑΝΑΛΥΣΗ
+# ════════════════════════════════════════════════════════════════════
+with tab_dec:
+    st.markdown(
+        "Σύγκριση συνολικής επισκεψιμότητας ανά δεκαετία και "
+        "διερεύνηση ποιες περιφέρειες κέρδισαν ή έχασαν μερίδιο."
+    )
+
+    df_dec = df.copy()
+    df_dec["Decade"] = (df_dec["Year"] // 10) * 10
+    df_dec["Decade_Label"] = df_dec["Decade"].astype(str) + "s"
+
+    # Δεκαετιακά σύνολα
+    decade_total = df_dec.groupby("Decade_Label")["Visitors"].sum().reset_index()
+    decade_total["Visitors_M"] = decade_total["Visitors"] / 1_000_000
+
+    # Δεκαετία vs δεκαετία % change
+    decade_total["pct_change"] = decade_total["Visitors"].pct_change() * 100
+
+    col_d1, col_d2 = st.columns([1, 1])
+
+    with col_d1:
+        fig_dec_bar = go.Figure()
+        colors_dec = ["#bdc3c7", "#3498db", "#2ecc71", "#e67e22"]
+        for i, row in decade_total.iterrows():
+            pct_txt = f"<br>{row['pct_change']:+.0f}% vs προηγ." if not pd.isna(row["pct_change"]) else ""
+            fig_dec_bar.add_trace(go.Bar(
+                x=[row["Decade_Label"]],
+                y=[row["Visitors_M"]],
+                marker_color=colors_dec[i % len(colors_dec)],
+                text=f"{row['Visitors_M']:.1f}M{pct_txt}",
+                textposition="outside",
+                name=row["Decade_Label"],
+                showlegend=False,
+            ))
+        fig_dec_bar.update_layout(
+            title="Συνολικοί Επισκέπτες ανά Δεκαετία",
+            yaxis_title="Εκατομμύρια Επισκέπτες",
+            height=380, xaxis_title="",
+        )
+        st.plotly_chart(fig_dec_bar, use_container_width=True)
+
+    with col_d2:
+        # Market share ανά περιφέρεια ανά δεκαετία
+        dec_region = (
+            df_dec.groupby(["Decade_Label", "Region"])["Visitors"]
+            .sum().reset_index()
+        )
+        dec_region["Share"] = dec_region.groupby("Decade_Label")["Visitors"].transform(
+            lambda x: x / x.sum() * 100
+        )
+        fig_share = px.bar(
+            dec_region,
+            x="Decade_Label", y="Share",
+            color="Region",
+            title="Μερίδιο Επισκεψιμότητας ανά Περιφέρεια & Δεκαετία",
+            labels={"Share": "%", "Decade_Label": "Δεκαετία", "Region": "Περιφέρεια"},
+            barmode="stack",
+        )
+        fig_share.update_layout(
+            height=380,
+            legend=dict(orientation="h", y=-0.4, font_size=10),
+            yaxis=dict(ticksuffix="%"),
+            xaxis_title="",
+        )
+        st.plotly_chart(fig_share, use_container_width=True)
+
+    # Μουσεία ανά δεκαετία: ποια "ακμάζουν" σε κάθε εποχή
+    with st.expander("🏛️ Top 5 Μουσεία ανά Δεκαετία"):
+        dec_museum = (
+            df_dec.groupby(["Decade_Label", "Museum"])["Visitors"]
+            .sum().reset_index()
+        )
+        cols_d = st.columns(len(decade_total))
+        for i, decade in enumerate(decade_total["Decade_Label"]):
+            sub = dec_museum[dec_museum["Decade_Label"] == decade].nlargest(5, "Visitors")
+            with cols_d[i]:
+                st.markdown(f"**{decade}**")
+                for _, r in sub.iterrows():
+                    st.markdown(f"- {r['Museum'][:35]}  \n  *{r['Visitors']:,.0f}*")
+
+# ════════════════════════════════════════════════════════════════════
+# TAB 2 — ΕΞΕΛΙΞΗ ΕΠΟΧΙΚΟΤΗΤΑΣ
+# ════════════════════════════════════════════════════════════════════
+with tab_seas:
+    st.markdown(
+        "Πώς έχει εξελιχθεί η **κατανομή επισκεπτών ανά εποχή** από το 1998 έως σήμερα. "
+        "Αυξάνεται η καλοκαιρινή συγκέντρωση ή μοιράζεται το κοινό ομαλότερα;"
+    )
+
+    # % ανά εποχή ανά έτος
+    df_seas = df.copy()
+    df_seas["Season"] = df_seas["Month"].map(get_season)
+    seas_year = (
+        df_seas.groupby(["Year", "Season"])["Visitors"]
+        .sum().reset_index()
+    )
+    seas_year["Share"] = seas_year.groupby("Year")["Visitors"].transform(
+        lambda x: x / x.sum() * 100
+    )
+
+    col_s1, col_s2 = st.columns([3, 2])
+
+    with col_s1:
+        fig_seas = px.area(
+            seas_year,
+            x="Year", y="Share",
+            color="Season",
+            color_discrete_map=SEASON_COLORS,
+            groupnorm="percent" if False else None,
+            labels={"Share": "% Επισκεπτών", "Year": "Έτος", "Season": "Εποχή"},
+            title="Εξέλιξη Εποχικής Κατανομής 1998–2025",
+        )
+        fig_seas.update_layout(
+            height=400,
+            yaxis=dict(ticksuffix="%", range=[0, 55]),
+            legend=dict(orientation="h", y=-0.2),
+        )
+        st.plotly_chart(fig_seas, use_container_width=True)
+
+    with col_s2:
+        # Τάση καλοκαιρινού % με OLS
+        summer_pct = seas_year[seas_year["Season"] == "Καλοκαίρι"].set_index("Year")["Share"]
+        summer_no_covid = summer_pct.drop(index=[y for y in [2020,2021] if y in summer_pct.index])
+        slope_s, intercept_s, r_s, _, _ = _stats.linregress(
+            summer_no_covid.index.astype(int), summer_no_covid.values
+        )
+        direction = "αυξάνεται" if slope_s > 0.05 else ("μειώνεται" if slope_s < -0.05 else "παραμένει σταθερό")
+
+        st.markdown("#### 📊 Τάση Καλοκαιριού")
+        st.metric(
+            "Καλοκαιρινό % (μέσο)",
+            f"{summer_no_covid.mean():.1f}%",
+            delta=f"{slope_s:+.2f}% ανά έτος",
+            delta_color="inverse" if slope_s > 0 else "normal",
+        )
+        st.info(
+            f"Το καλοκαιρινό μερίδιο **{direction}** κατά "
+            f"**{abs(slope_s):.2f}%/έτος** (R²={r_s**2:.3f}). "
+            f"Από {summer_no_covid.iloc[0]:.1f}% ({summer_no_covid.index[0]}) "
+            f"σε {summer_no_covid.iloc[-1]:.1f}% ({summer_no_covid.index[-1]})."
+        )
+
+        # Εποχή ανά μήνα: μέσος όρος
+        monthly_avg = (
+            df.groupby("Month")["Visitors"].mean().reset_index()
+        )
+        monthly_avg["Month_Name"] = monthly_avg["Month"].map(MONTH_SHORT)
+        monthly_avg["Season"] = monthly_avg["Month"].map(get_season)
+        fig_monthly = px.bar(
+            monthly_avg.sort_values("Month"),
+            x="Month_Name", y="Visitors",
+            color="Season",
+            color_discrete_map=SEASON_COLORS,
+            title="Μέσος Επισκέπτης ανά Μήνα (σύνολο ετών)",
+            labels={"Visitors": "Μέσος", "Month_Name": ""},
+        )
+        fig_monthly.update_layout(
+            height=280, showlegend=False,
+            yaxis=dict(tickformat=",.0f"),
+            margin=dict(t=40, b=0),
+        )
+        st.plotly_chart(fig_monthly, use_container_width=True)
+
+    # Heatmap εποχικής κατανομής ανά περιφέρεια
+    st.markdown("#### 🌡️ Εποχική Κατανομή ανά Περιφέρεια")
+    reg_seas = (
+        df_seas.groupby(["Region", "Season"])["Visitors"]
+        .sum().reset_index()
+    )
+    reg_seas["Share"] = reg_seas.groupby("Region")["Visitors"].transform(
+        lambda x: x / x.sum() * 100
+    )
+    reg_seas_pivot = reg_seas.pivot(index="Region", columns="Season", values="Share").fillna(0)
+    fig_heat_seas = px.imshow(
+        reg_seas_pivot[["Χειμώνας","Άνοιξη","Καλοκαίρι","Φθινόπωρο"]],
+        color_continuous_scale="YlOrRd",
+        text_auto=".1f",
+        aspect="auto",
+        title="% Επισκεπτών ανά Εποχή & Περιφέρεια",
+        labels={"color": "%"},
+    )
+    fig_heat_seas.update_layout(height=380, coloraxis_showscale=True)
+    st.plotly_chart(fig_heat_seas, use_container_width=True)
+
+# ════════════════════════════════════════════════════════════════════
+# TAB 3 — POST-COVID ΑΝΑΚΑΜΨΗ
+# ════════════════════════════════════════════════════════════════════
+with tab_covid:
+    st.markdown(
+        "Σύγκριση επισκεψιμότητας **2022–2025 vs βάση 2019** "
+        "για να εντοπίσουμε ποιες περιφέρειες και μουσεία ανέκαμψαν "
+        "πλήρως, ποια ξεπέρασαν το 2019 και ποια υστερούν."
+    )
+
+    BASE_YEAR = 2019
+    RECOVERY_YEARS = [2022, 2023, 2024, 2025]
+
+    # ── Εθνική ανάκαμψη ─────────────────────────────────────────────
+    nat_by_year = df.groupby("Year")["Visitors"].sum()
+    base_nat    = nat_by_year.get(BASE_YEAR, None)
+
+    if base_nat:
+        rec_data = []
+        for yr in RECOVERY_YEARS:
+            val = nat_by_year.get(yr, None)
+            if val:
+                rec_data.append({"Έτος": yr, "Ανάκαμψη %": val / base_nat * 100, "Επισκέπτες": val})
+
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        for col, row in zip([rc1, rc2, rc3, rc4], rec_data):
+            delta_col = "normal" if row["Ανάκαμψη %"] >= 100 else "inverse"
+            col.metric(
+                str(row["Έτος"]),
+                f"{row['Ανάκαμψη %']:.1f}% του 2019",
+                delta=f"{row['Επισκέπτες'] - base_nat:+,.0f}",
+                delta_color=delta_col,
+            )
+
+    col_r1, col_r2 = st.columns(2)
+
+    with col_r1:
+        # Ανάκαμψη ανά περιφέρεια (2024 vs 2019)
+        reg_by_year = df.groupby(["Year","Region"])["Visitors"].sum().reset_index()
+        base_reg    = reg_by_year[reg_by_year["Year"] == BASE_YEAR][["Region","Visitors"]].rename(columns={"Visitors":"Base"})
+        comp_yr     = st.selectbox("Έτος σύγκρισης:", RECOVERY_YEARS[::-1], key="rec_yr")
+        comp_reg    = reg_by_year[reg_by_year["Year"] == comp_yr][["Region","Visitors"]]
+
+        rec_reg = base_reg.merge(comp_reg, on="Region", how="inner")
+        rec_reg["Recovery"] = rec_reg["Visitors"] / rec_reg["Base"] * 100
+        rec_reg["Status"]   = rec_reg["Recovery"].apply(
+            lambda v: "Υπέρβαση" if v > 105 else ("Ανακτήθηκε" if v >= 95 else "Υστερεί")
+        )
+        STATUS_COLORS = {"Υπέρβαση": "#2ecc71", "Ανακτήθηκε": "#3498db", "Υστερεί": "#e74c3c"}
+
+        fig_rec_reg = px.bar(
+            rec_reg.sort_values("Recovery"),
+            x="Recovery", y="Region",
+            orientation="h",
+            color="Status",
+            color_discrete_map=STATUS_COLORS,
+            text=rec_reg.sort_values("Recovery")["Recovery"].apply(lambda v: f"{v:.0f}%"),
+            labels={"Recovery": f"% του {BASE_YEAR}", "Region": ""},
+            title=f"Ανάκαμψη ανά Περιφέρεια ({comp_yr} vs {BASE_YEAR})",
+        )
+        fig_rec_reg.add_vline(x=100, line_dash="dash", line_color="gray",
+                              annotation_text=f"Βάση {BASE_YEAR}")
+        fig_rec_reg.update_traces(textposition="outside")
+        fig_rec_reg.update_layout(
+            height=420, showlegend=True,
+            xaxis=dict(ticksuffix="%", range=[0, 140]),
+            legend=dict(orientation="h", y=-0.15),
+        )
+        st.plotly_chart(fig_rec_reg, use_container_width=True)
+
+    with col_r2:
+        # Ανάκαμψη ανά μουσείο: scatter recovery vs size
+        base_mus = (
+            df[df["Year"] == BASE_YEAR]
+            .groupby("Museum")["Visitors"].sum()
+            .reset_index().rename(columns={"Visitors":"Base"})
+        )
+        comp_mus = (
+            df[df["Year"] == comp_yr]
+            .groupby("Museum")["Visitors"].sum()
+            .reset_index().rename(columns={"Visitors":"Comp"})
+        )
+        rec_mus = base_mus.merge(comp_mus, on="Museum", how="inner")
+        rec_mus = rec_mus[rec_mus["Base"] > 0]
+        rec_mus["Recovery"] = rec_mus["Comp"] / rec_mus["Base"] * 100
+        rec_mus["Status"]   = rec_mus["Recovery"].apply(
+            lambda v: "Υπέρβαση" if v > 105 else ("Ανακτήθηκε" if v >= 95 else "Υστερεί")
+        )
+        rec_mus = rec_mus.merge(df[["Museum","Region"]].drop_duplicates(), on="Museum", how="left")
+
+        fig_rec_mus = px.scatter(
+            rec_mus,
+            x="Base", y="Recovery",
+            color="Status",
+            color_discrete_map=STATUS_COLORS,
+            hover_name="Museum",
+            hover_data={"Base":":,.0f","Comp":":,.0f","Recovery":":.1f","Region":True},
+            size="Base", size_max=30,
+            log_x=True,
+            labels={
+                "Base":     f"Επισκέπτες {BASE_YEAR} (log)",
+                "Recovery": f"% ανάκαμψης vs {BASE_YEAR}",
+                "Region":   "Περιφέρεια",
+            },
+            title=f"Ανάκαμψη ανά Μουσείο ({comp_yr} vs {BASE_YEAR})",
+        )
+        fig_rec_mus.add_hline(y=100, line_dash="dash", line_color="gray",
+                              annotation_text=f"Βάση {BASE_YEAR}")
+        fig_rec_mus.update_layout(
+            height=420,
+            legend=dict(orientation="h", y=-0.15),
+        )
+        st.plotly_chart(fig_rec_mus, use_container_width=True)
+
+    # Μουσεία που δεν έχουν ανακάμψει
+    with st.expander(f"📋 Αναλυτική Κατάσταση Ανάκαμψης ({comp_yr} vs {BASE_YEAR})"):
+        tbl_rec = rec_mus[["Museum","Region","Base","Comp","Recovery","Status"]].sort_values("Recovery")
+        tbl_rec = tbl_rec.rename(columns={"Base":f"Επισκ.{BASE_YEAR}","Comp":f"Επισκ.{comp_yr}"})
+        tbl_rec.index = range(1, len(tbl_rec)+1)
+        st.dataframe(
+            tbl_rec.style.format({
+                f"Επισκ.{BASE_YEAR}": "{:,.0f}",
+                f"Επισκ.{comp_yr}":   "{:,.0f}",
+                "Recovery":            "{:.1f}%",
+            }).applymap(
+                lambda v: f"color: {STATUS_COLORS.get(v,'')}" if v in STATUS_COLORS else "",
+                subset=["Status"]
+            ),
+            use_container_width=True, height=400,
+        )
+
+# ════════════════════════════════════════════════════════════════════
+# TAB 4 — POLAR / PEAK ΜΗΝΕΣ ΑΝΑ ΠΕΡΙΦΕΡΕΙΑ
+# ════════════════════════════════════════════════════════════════════
+with tab_polar:
+    st.markdown(
+        "**Polar chart** — κάθε «ακτίνα» είναι ένας μήνας, το μήκος της "
+        "αντιπροσωπεύει τον μέσο αριθμό επισκεπτών. "
+        "Αποκαλύπτει τον ρυθμό και την ένταση της εποχικότητας ανά περιφέρεια."
+    )
+
+    regions_polar = sorted(df["Region"].unique())
+    sel_regions   = st.multiselect(
+        "Επέλεξε περιφέρειες (max 4):",
+        regions_polar, default=regions_polar[:4], max_selections=4,
+        key="polar_regions",
+    )
+
+    if sel_regions:
+        polar_cols = st.columns(min(len(sel_regions), 2))
+        month_order = list(range(1, 13))
+
+        for i, region in enumerate(sel_regions):
+            col = polar_cols[i % 2]
+            monthly_r = (
+                df[df["Region"] == region]
+                .groupby("Month")["Visitors"].mean()
+                .reindex(month_order, fill_value=0)
+                .reset_index()
+            )
+            monthly_r["Month_Name"] = monthly_r["Month"].map(MONTH_SHORT)
+            monthly_r["Season"]     = monthly_r["Month"].map(get_season)
+
+            # Κλείσιμο polygon
+            first = monthly_r.iloc[[0]].copy()
+            monthly_r_closed = pd.concat([monthly_r, first], ignore_index=True)
+
+            fig_polar = go.Figure()
+            fig_polar.add_trace(go.Scatterpolar(
+                r=list(monthly_r["Visitors"]) + [monthly_r["Visitors"].iloc[0]],
+                theta=list(monthly_r["Month_Name"]) + [monthly_r["Month_Name"].iloc[0]],
+                fill="toself",
+                fillcolor="rgba(231,76,60,0.2)",
+                line=dict(color="#e74c3c", width=2),
+                name=region,
+                hovertemplate="%{theta}: %{r:,.0f}<extra></extra>",
+            ))
+
+            peak_month = monthly_r.loc[monthly_r["Visitors"].idxmax(), "Month_Name"]
+            peak_val   = monthly_r["Visitors"].max()
+            cv_r = monthly_r["Visitors"].std() / monthly_r["Visitors"].mean()
+
+            fig_polar.update_layout(
+                polar=dict(
+                    radialaxis=dict(
+                        visible=True,
+                        tickformat=",.0f",
+                        angle=90,
+                    ),
+                    angularaxis=dict(direction="clockwise", rotation=90),
+                ),
+                title=dict(
+                    text=f"{region}<br><sup>Peak: {peak_month} ({peak_val:,.0f}) | CV={cv_r:.2f}</sup>",
+                    font_size=13,
+                ),
+                height=340,
+                showlegend=False,
+                margin=dict(t=60, b=20, l=40, r=40),
+            )
+            col.plotly_chart(fig_polar, use_container_width=True)
+
+    # Σύγκριση CV εποχικότητας ανά περιφέρεια
+    st.markdown("#### 📊 Δείκτης Εποχικότητας ανά Περιφέρεια (CV)")
+    cv_region = (
+        df.groupby(["Region","Month"])["Visitors"]
+        .mean().reset_index()
+        .groupby("Region")["Visitors"]
+        .agg(["mean","std"])
+        .assign(CV=lambda x: x["std"] / x["mean"])
+        .reset_index()
+        .sort_values("CV", ascending=False)
+    )
+    cv_region["Χαρακτήρας"] = cv_region["CV"].apply(
+        lambda v: "Έντονα εποχική" if v > 0.7 else ("Μέτρια εποχική" if v > 0.4 else "Σταθερή ροή")
+    )
+    CHAR_COLORS = {
+        "Έντονα εποχική": "#e74c3c",
+        "Μέτρια εποχική": "#f39c12",
+        "Σταθερή ροή":    "#2ecc71",
+    }
+    fig_cv = px.bar(
+        cv_region,
+        x="CV", y="Region",
+        orientation="h",
+        color="Χαρακτήρας",
+        color_discrete_map=CHAR_COLORS,
+        text=cv_region["CV"].apply(lambda v: f"{v:.2f}"),
+        labels={"CV": "Συντελεστής Μεταβλητότητας", "Region": ""},
+        title="Εποχικότητα ανά Περιφέρεια (χαμηλό CV = ομοιόμορφη ροή)",
+    )
+    fig_cv.update_traces(textposition="outside")
+    fig_cv.update_layout(
+        height=420,
+        yaxis={"categoryorder": "total ascending"},
+        legend=dict(orientation="h", y=-0.15),
+        xaxis=dict(range=[0, cv_region["CV"].max() * 1.2]),
+    )
+    st.plotly_chart(fig_cv, use_container_width=True)
