@@ -2274,7 +2274,7 @@ with tab_region:
                 "Delta":        "{:+,.0f}",
                 "pct_per_year": "{:+.1f}%",
                 "r2":           "{:.3f}",
-            }).applymap(
+            }).map(
                 lambda v: f"color: {TREND_COLORS.get(v,'black')}" if isinstance(v,str) and v in TREND_COLORS else "",
                 subset=["Τάση"]
             ),
@@ -2487,7 +2487,7 @@ with tab_rank:
                 "r2":            "{:.3f}",
                 "Last_Visitors": "{:,.0f}",
                 "Pred_2026":     "{:,.0f}",
-            }).applymap(
+            }).map(
                 lambda v: f"color: {TREND_COLORS.get(v,'black')}" if isinstance(v,str) and v in TREND_COLORS else "",
                 subset=["Τάση"]
             ),
