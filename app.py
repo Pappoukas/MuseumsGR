@@ -1480,8 +1480,8 @@ if sklearn_ok and not df_places.empty:
             # Radar chart για κάθε cluster
             import plotly.graph_objects as go
 
-            radar_cols  = ["Summer_Pct","Autumn_Pct","Winter_Pct","Spring_Pct","CV","Rating"]
-            radar_names = ["Καλοκαίρι %","Φθινόπωρο %","Χειμώνας %","Άνοιξη %","Εποχικότητα","Rating"]
+            radar_cols  = ["Summer_Pct","Winter_Pct","Spring_Pct","CV","Rating"]
+            radar_names = ["Καλοκαίρι %","Χειμώνας %","Άνοιξη %","Εποχικότητα","Rating"]
 
             fig_radar = go.Figure()
             for _, crow in centers_df.iterrows():
