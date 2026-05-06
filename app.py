@@ -85,6 +85,25 @@ selected_museum = st.sidebar.selectbox("Μουσείο", ["Όλα"] + museum_lis
 years = sorted(df['Year'].unique())
 selected_years = st.sidebar.slider("Έτη", min(years), max(years), (2018, max(years)))
 
+st.sidebar.divider()
+st.sidebar.subheader("📐 Παράμετροι Τάσης")
+window_start = st.sidebar.slider(
+    "Εκτίμηση τάσης από έτος:",
+    min_value=1998, max_value=2018, value=2010,
+    help="Περιορίζει τα δεδομένα που χρησιμοποιούνται για την εκτίμηση τάσης. "
+         "Τιμή 2010 ή αργότερα δίνει πιο πρόσφατη εικόνα."
+)
+
+st.sidebar.divider()
+st.sidebar.markdown(
+    "**Πηγή δεδομένων:**\n"
+    "[ΕΛΣΤΑΤ — Πολιτιστική Στατιστική](https://www.statistics.gr/el/statistics/-/publication/SCI21/-)"
+)
+st.sidebar.markdown(
+    "**Απεικόνιση:** Καλλίνικος Κωνσταντίνος\n\n"
+    "**Τελευταία ενημέρωση:** Μάιος 2026"
+)
+
 # ─────────────────────────────────────────────
 # ΦΙΛΤΡΑΡΙΣΜΑ
 # ─────────────────────────────────────────────
@@ -2085,7 +2104,7 @@ national_annual = (
     df.groupby("Year")["Visitors"].sum()
     .rename("Visitors")
 )
-nat_trend = fit_trend(national_annual)
+nat_trend = fit_trend(national_annual[national_annual.index >= window_start])
 
 tab_nat, tab_region, tab_museum, tab_rank = st.tabs([
     "🇬🇷 Εθνική Τάση",
@@ -2102,7 +2121,7 @@ with tab_nat:
     last_actual   = int(national_annual.get(2024, national_annual.iloc[-1]))
     pred_2026     = int(predict(nat_trend, 2026))
     growth_abs    = int(nat_trend["slope"])
-    growth_pct    = nat_trend["slope"] / national_annual[~national_annual.index.isin(COVID_YEARS)].mean() * 100
+    growth_pct    = nat_trend["slope"] / national_annual[national_annual.index >= window_start][~national_annual[national_annual.index >= window_start].index.isin(COVID_YEARS)].mean() * 100
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Τελευταίο Έτος (2024)",   f"{last_actual:,.0f}")
@@ -2120,7 +2139,7 @@ with tab_nat:
     )
 
     # Γραμμή τάσης πάνω σε μη-COVID έτη
-    trend_years = [y for y in hist_df["Year"] if y not in COVID_YEARS]
+    trend_years = [y for y in hist_df["Year"] if y not in COVID_YEARS and y >= window_start]
     trend_vals  = [predict(nat_trend, y) for y in trend_years]
 
     # Προβλέψεις με διάστημα εμπιστοσύνης (±1.96 * se * sqrt(1 + 1/n))
@@ -2204,6 +2223,7 @@ with tab_region:
     for region in region_annual["Region"].unique():
         s = (region_annual[region_annual["Region"] == region]
              .set_index("Year")["Visitors"])
+        s = s[s.index >= window_start]
         t = fit_trend(s)
         if t is None:
             continue
@@ -2300,7 +2320,7 @@ with tab_museum:
         .groupby("Year")["Visitors"].sum()
         .rename("Visitors")
     )
-    m_trend = fit_trend(m_annual)
+    m_trend = fit_trend(m_annual[m_annual.index >= window_start])
 
     if m_trend is None:
         st.warning(f"Ανεπαρκή δεδομένα για το μουσείο '{sel_museum}' (χρειάζονται ≥4 έτη).")
@@ -2405,10 +2425,10 @@ with tab_rank:
         results = []
         for museum in df["Museum"].unique():
             s = df[df["Museum"]==museum].groupby("Year")["Visitors"].sum()
-            t = fit_trend(s)
+            t = fit_trend(s[s.index >= window_start])
             if t is None:
                 continue
-            mean_v = s[~s.index.isin(COVID_YEARS)].mean()
+            mean_v = s[s.index >= window_start][~s[s.index >= window_start].index.isin(COVID_YEARS)].mean()
             pct    = t["slope"] / max(mean_v, 1) * 100
             results.append({
                 "Museum":        museum,
