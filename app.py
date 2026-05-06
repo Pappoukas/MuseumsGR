@@ -2041,3 +2041,461 @@ else:
             file_name="museums_ratings_visitors.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+st.divider()
+
+# ═══════════════════════════════════════════════════════════════
+# 19. ΤΑΣΕΙΣ & ΠΡΟΒΛΕΨΕΙΣ
+# ═══════════════════════════════════════════════════════════════
+st.subheader("📈 Τάσεις & Προβλέψεις Επισκεψιμότητας")
+st.markdown(
+    "Γραμμική τάση και προβλέψεις 3 ετών. "
+    "Τα έτη **2020–2021** εξαιρούνται από την εκτίμηση τάσης λόγω COVID."
+)
+
+from scipy import stats as _stats
+
+COVID_YEARS = [2020, 2021]
+FORECAST_YRS = [2026, 2027, 2028]
+TREND_COLORS = {
+    "Ανερχόμενο":  "#2ecc71",
+    "Σταθερό":     "#3498db",
+    "Φθίνον":      "#e74c3c",
+}
+
+# ── Βοηθητική: γραμμική τάση αγνοώντας COVID ────────────────────────────────
+def fit_trend(series_by_year: pd.Series, exclude=COVID_YEARS):
+    """series_by_year: index=Year, values=Visitors. Returns (slope, intercept, r2, se)."""
+    s = series_by_year.drop(index=[y for y in exclude if y in series_by_year.index], errors="ignore")
+    if len(s) < 4:
+        return None
+    slope, intercept, r, _, se = _stats.linregress(s.index.astype(int), s.values)
+    return dict(slope=slope, intercept=intercept, r2=r**2, se=se, n=len(s))
+
+def predict(trend, year):
+    return trend["intercept"] + trend["slope"] * year
+
+def classify_trend(pct_per_year):
+    if pct_per_year > 3:  return "Ανερχόμενο"
+    if pct_per_year < -3: return "Φθίνον"
+    return "Σταθερό"
+
+# ── Εθνικά δεδομένα ─────────────────────────────────────────────────────────
+national_annual = (
+    df.groupby("Year")["Visitors"].sum()
+    .rename("Visitors")
+)
+nat_trend = fit_trend(national_annual)
+
+tab_nat, tab_region, tab_museum, tab_rank = st.tabs([
+    "🇬🇷 Εθνική Τάση",
+    "🗺️ Ανά Περιφέρεια",
+    "🏛️ Ανά Μουσείο",
+    "📊 Ταξινόμηση Μουσείων",
+])
+
+# ════════════════════════════════════════════════════════════════════
+# TAB 1 — ΕΘΝΙΚΗ ΤΑΣΗ
+# ════════════════════════════════════════════════════════════════════
+with tab_nat:
+    # ── KPIs ────────────────────────────────────────────────────────
+    last_actual   = int(national_annual.get(2024, national_annual.iloc[-1]))
+    pred_2026     = int(predict(nat_trend, 2026))
+    growth_abs    = int(nat_trend["slope"])
+    growth_pct    = nat_trend["slope"] / national_annual[~national_annual.index.isin(COVID_YEARS)].mean() * 100
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Τελευταίο Έτος (2024)",   f"{last_actual:,.0f}")
+    k2.metric("Πρόβλεψη 2026",            f"{pred_2026:,.0f}",
+              delta=f"+{pred_2026 - last_actual:,.0f}")
+    k3.metric("Ετήσια Αύξηση (τάση)",    f"+{growth_abs:,.0f} επισκ.")
+    k4.metric("R² Γραμμικής Τάσης",       f"{nat_trend['r2']:.3f}",
+              help="Πόσο καλά η ευθεία εξηγεί τη διακύμανση. >0.7 = ισχυρή τάση.")
+
+    # ── Γράφημα: ιστορικά + τάση + πρόβλεψη ────────────────────────
+    hist_df = national_annual.reset_index()
+    hist_df.columns = ["Year", "Visitors"]
+    hist_df["Τύπος"] = hist_df["Year"].apply(
+        lambda y: "COVID (εξαίρεση)" if y in COVID_YEARS else "Πραγματικά"
+    )
+
+    # Γραμμή τάσης πάνω σε μη-COVID έτη
+    trend_years = [y for y in hist_df["Year"] if y not in COVID_YEARS]
+    trend_vals  = [predict(nat_trend, y) for y in trend_years]
+
+    # Προβλέψεις με διάστημα εμπιστοσύνης (±1.96 * se * sqrt(1 + 1/n))
+    se_pred = nat_trend["se"] * np.sqrt(1 + 1 / nat_trend["n"])
+    z       = 1.96
+    fc_df   = pd.DataFrame({
+        "Year":    FORECAST_YRS,
+        "Visitors": [predict(nat_trend, y) for y in FORECAST_YRS],
+        "Lower":   [predict(nat_trend, y) - z * se_pred * abs(y - 2023) for y in FORECAST_YRS],
+        "Upper":   [predict(nat_trend, y) + z * se_pred * abs(y - 2023) for y in FORECAST_YRS],
+    })
+
+    fig_nat = go.Figure()
+
+    # Πραγματικές τιμές
+    actual = hist_df[hist_df["Τύπος"] == "Πραγματικά"]
+    covid  = hist_df[hist_df["Τύπος"] == "COVID (εξαίρεση)"]
+
+    fig_nat.add_trace(go.Bar(
+        x=actual["Year"], y=actual["Visitors"],
+        name="Πραγματικά", marker_color="#3498db", opacity=0.8,
+    ))
+    fig_nat.add_trace(go.Bar(
+        x=covid["Year"], y=covid["Visitors"],
+        name="COVID (εξαίρεση)", marker_color="#e74c3c", opacity=0.6,
+    ))
+
+    # Γραμμή τάσης
+    fig_nat.add_trace(go.Scatter(
+        x=trend_years, y=trend_vals,
+        mode="lines", name="Γραμμή Τάσης",
+        line=dict(color="#f39c12", width=2.5, dash="dot"),
+    ))
+
+    # Διάστημα εμπιστοσύνης
+    fig_nat.add_trace(go.Scatter(
+        x=FORECAST_YRS + FORECAST_YRS[::-1],
+        y=list(fc_df["Upper"]) + list(fc_df["Lower"][::-1]),
+        fill="toself", fillcolor="rgba(46,204,113,0.15)",
+        line=dict(color="rgba(0,0,0,0)"),
+        name="95% Διάστημα", showlegend=True,
+    ))
+
+    # Προβλέψεις
+    fig_nat.add_trace(go.Scatter(
+        x=fc_df["Year"], y=fc_df["Visitors"],
+        mode="lines+markers+text",
+        name="Πρόβλεψη",
+        line=dict(color="#2ecc71", width=3),
+        marker=dict(size=9, symbol="diamond"),
+        text=[f"{v:,.0f}" for v in fc_df["Visitors"]],
+        textposition="top center",
+        textfont=dict(size=11),
+    ))
+
+    fig_nat.update_layout(
+        title="Εθνική Επισκεψιμότητα 1998–2028 (πρόβλεψη)",
+        xaxis_title="Έτος",
+        yaxis_title="Επισκέπτες",
+        barmode="overlay",
+        height=480,
+        legend=dict(orientation="h", y=-0.2),
+        yaxis=dict(tickformat=",.0f"),
+    )
+    st.plotly_chart(fig_nat, use_container_width=True)
+    st.caption(
+        "Η τάση υπολογίζεται με **γραμμική παλινδρόμηση** (OLS) εξαιρώντας τα COVID έτη. "
+        "Το διάστημα εμπιστοσύνης ±95% διευρύνεται για μακρύτερες προβλέψεις."
+    )
+
+# ════════════════════════════════════════════════════════════════════
+# TAB 2 — ΑΝΑ ΠΕΡΙΦΕΡΕΙΑ
+# ════════════════════════════════════════════════════════════════════
+with tab_region:
+    region_annual = (
+        df.groupby(["Year","Region"])["Visitors"].sum().reset_index()
+    )
+
+    # Τάση ανά περιφέρεια
+    reg_trends = []
+    for region in region_annual["Region"].unique():
+        s = (region_annual[region_annual["Region"] == region]
+             .set_index("Year")["Visitors"])
+        t = fit_trend(s)
+        if t is None:
+            continue
+        mean_vis = s[~s.index.isin(COVID_YEARS)].mean()
+        pct = t["slope"] / max(mean_vis, 1) * 100
+        reg_trends.append({
+            "Region":       region,
+            "slope":        t["slope"],
+            "r2":           t["r2"],
+            "pct_per_year": pct,
+            "Τάση":         classify_trend(pct),
+            "Pred_2026":    int(predict(t, 2026)),
+            "Last_2024":    int(s.get(2024, s.iloc[-1])),
+        })
+    reg_df = pd.DataFrame(reg_trends).sort_values("pct_per_year", ascending=False)
+
+    col_bars, col_map = st.columns([1, 1])
+
+    with col_bars:
+        fig_reg = px.bar(
+            reg_df,
+            x="pct_per_year", y="Region",
+            orientation="h",
+            color="Τάση",
+            color_discrete_map=TREND_COLORS,
+            text=reg_df["pct_per_year"].apply(lambda v: f"{v:+.1f}%/έτος"),
+            labels={"pct_per_year": "Ετήσια μεταβολή %", "Region": ""},
+            title="Ετήσια Τάση ανά Περιφέρεια",
+        )
+        fig_reg.update_traces(textposition="outside")
+        fig_reg.update_layout(
+            height=480, showlegend=True,
+            xaxis=dict(tickformat=".1f", ticksuffix="%"),
+            yaxis={"categoryorder": "total ascending"},
+            legend=dict(orientation="h", y=-0.15),
+        )
+        st.plotly_chart(fig_reg, use_container_width=True)
+
+    with col_map:
+        # Small-multiples: γραμμές τάσης ανά περιφέρεια
+        fig_lines = px.line(
+            region_annual,
+            x="Year", y="Visitors",
+            color="Region",
+            title="Εξέλιξη ανά Περιφέρεια",
+            labels={"Visitors": "Επισκέπτες", "Year": "Έτος"},
+        )
+        fig_lines.add_vrect(
+            x0=2019.5, x1=2021.5,
+            fillcolor="red", opacity=0.07,
+            annotation_text="COVID", annotation_position="top left",
+        )
+        fig_lines.update_layout(
+            height=480,
+            legend=dict(orientation="h", y=-0.35, font_size=10),
+            yaxis=dict(tickformat=",.0f"),
+        )
+        st.plotly_chart(fig_lines, use_container_width=True)
+
+    # Πρόβλεψη 2026 ανά περιφέρεια
+    with st.expander("📋 Πρόβλεψη 2026 ανά Περιφέρεια"):
+        tbl_reg = reg_df[["Region","Last_2024","Pred_2026","pct_per_year","r2","Τάση"]].copy()
+        tbl_reg["Delta"] = tbl_reg["Pred_2026"] - tbl_reg["Last_2024"]
+        st.dataframe(
+            tbl_reg.style.format({
+                "Last_2024":    "{:,.0f}",
+                "Pred_2026":    "{:,.0f}",
+                "Delta":        "{:+,.0f}",
+                "pct_per_year": "{:+.1f}%",
+                "r2":           "{:.3f}",
+            }).applymap(
+                lambda v: f"color: {TREND_COLORS.get(v,'black')}" if isinstance(v,str) and v in TREND_COLORS else "",
+                subset=["Τάση"]
+            ),
+            use_container_width=True, hide_index=True,
+        )
+
+# ════════════════════════════════════════════════════════════════════
+# TAB 3 — ΑΝΑ ΜΟΥΣΕΙΟ (επιλογή)
+# ════════════════════════════════════════════════════════════════════
+with tab_museum:
+    museum_options = sorted(
+        df.groupby("Museum")["Visitors"].sum()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    sel_museum = st.selectbox(
+        "Επέλεξε μουσείο:", museum_options, key="forecast_museum"
+    )
+    n_years_fc = st.slider("Έτη πρόβλεψης:", 1, 5, 3, key="fc_years")
+
+    m_annual = (
+        df[df["Museum"] == sel_museum]
+        .groupby("Year")["Visitors"].sum()
+        .rename("Visitors")
+    )
+    m_trend = fit_trend(m_annual)
+
+    if m_trend is None:
+        st.warning(f"Ανεπαρκή δεδομένα για το μουσείο '{sel_museum}' (χρειάζονται ≥4 έτη).")
+    else:
+        last_yr  = m_annual.index.max()
+        fc_years = list(range(last_yr + 1, last_yr + 1 + n_years_fc))
+        fc_vals  = [predict(m_trend, y) for y in fc_years]
+        se_m     = m_trend["se"] * np.sqrt(1 + 1 / m_trend["n"])
+
+        mean_vis_m   = m_annual[~m_annual.index.isin(COVID_YEARS)].mean()
+        pct_m        = m_trend["slope"] / max(mean_vis_m, 1) * 100
+        trend_label  = classify_trend(pct_m)
+        trend_color  = TREND_COLORS[trend_label]
+
+        # KPIs
+        km1, km2, km3, km4 = st.columns(4)
+        km1.metric("Τελευταία τιμή", f"{int(m_annual.iloc[-1]):,} ({last_yr})")
+        km2.metric("Τάση", f"{pct_m:+.1f}%/έτος",
+                   delta=trend_label,
+                   delta_color="normal" if trend_label=="Ανερχόμενο" else
+                               ("inverse" if trend_label=="Φθίνον" else "off"))
+        km3.metric(f"Πρόβλεψη {fc_years[-1]}",
+                   f"{int(predict(m_trend, fc_years[-1])):,}")
+        km4.metric("R²", f"{m_trend['r2']:.3f}")
+
+        # Γράφημα
+        fig_m = go.Figure()
+
+        act_x = [y for y in m_annual.index if y not in COVID_YEARS]
+        act_y = [m_annual[y] for y in act_x]
+        cov_x = [y for y in m_annual.index if y in COVID_YEARS]
+        cov_y = [m_annual[y] for y in cov_x]
+
+        fig_m.add_trace(go.Scatter(
+            x=list(m_annual.index), y=list(m_annual.values),
+            mode="lines+markers", name="Ιστορικά",
+            line=dict(color="#3498db", width=2),
+            marker=dict(size=6),
+        ))
+        if cov_x:
+            fig_m.add_trace(go.Scatter(
+                x=cov_x, y=cov_y, mode="markers",
+                name="COVID", marker=dict(color="#e74c3c", size=10, symbol="x"),
+            ))
+
+        # Τάση (non-COVID)
+        ty = list(range(m_annual.index.min(), last_yr + 1))
+        fig_m.add_trace(go.Scatter(
+            x=ty, y=[predict(m_trend, y) for y in ty],
+            mode="lines", name="Τάση (OLS)",
+            line=dict(color="#f39c12", dash="dot", width=2),
+        ))
+
+        # CI band
+        ci_upper = [max(0, predict(m_trend,y) + z * se_m * (i+1)) for i,y in enumerate(fc_years)]
+        ci_lower = [max(0, predict(m_trend,y) - z * se_m * (i+1)) for i,y in enumerate(fc_years)]
+        fig_m.add_trace(go.Scatter(
+            x=fc_years + fc_years[::-1],
+            y=ci_upper + ci_lower[::-1],
+            fill="toself", fillcolor="rgba(46,204,113,0.12)",
+            line=dict(color="rgba(0,0,0,0)"), name="95% CI",
+        ))
+
+        fig_m.add_trace(go.Scatter(
+            x=fc_years, y=fc_vals,
+            mode="lines+markers+text", name="Πρόβλεψη",
+            line=dict(color=trend_color, width=3),
+            marker=dict(size=10, symbol="diamond"),
+            text=[f"{int(v):,}" for v in fc_vals],
+            textposition="top center",
+        ))
+
+        fig_m.add_vrect(
+            x0=last_yr + 0.5, x1=fc_years[-1] + 0.5,
+            fillcolor="rgba(46,204,113,0.05)",
+            annotation_text="Πρόβλεψη", annotation_position="top left",
+        )
+        fig_m.update_layout(
+            title=f"Τάση & Πρόβλεψη: {sel_museum}",
+            xaxis_title="Έτος", yaxis_title="Επισκέπτες",
+            height=460, legend=dict(orientation="h", y=-0.2),
+            yaxis=dict(tickformat=",.0f"),
+        )
+        st.plotly_chart(fig_m, use_container_width=True)
+
+        st.caption(
+            f"Τάση: **{pct_m:+.1f}%/έτος** | "
+            f"R² = {m_trend['r2']:.3f} | "
+            f"Κλίση: {m_trend['slope']:+,.0f} επισκ./έτος. "
+            "Εξαιρούνται 2020–2021 από την παλινδρόμηση."
+        )
+
+# ════════════════════════════════════════════════════════════════════
+# TAB 4 — ΤΑΞΙΝΟΜΗΣΗ ΟΛΩΝ ΤΩΝ ΜΟΥΣΕΙΩΝ
+# ════════════════════════════════════════════════════════════════════
+with tab_rank:
+    st.markdown("Ταξινόμηση όλων των μουσείων ανά κατηγορία τάσης.")
+
+    # Υπολογισμός τάσης για όλα τα μουσεία
+    @st.cache_data
+    def compute_all_trends():
+        results = []
+        for museum in df["Museum"].unique():
+            s = df[df["Museum"]==museum].groupby("Year")["Visitors"].sum()
+            t = fit_trend(s)
+            if t is None:
+                continue
+            mean_v = s[~s.index.isin(COVID_YEARS)].mean()
+            pct    = t["slope"] / max(mean_v, 1) * 100
+            results.append({
+                "Museum":        museum,
+                "Τάση":          classify_trend(pct),
+                "pct_per_year":  round(pct, 2),
+                "slope":         int(t["slope"]),
+                "r2":            round(t["r2"], 3),
+                "Last_Visitors": int(s.iloc[-1]),
+                "Pred_2026":     int(max(0, predict(t, 2026))),
+            })
+        return pd.DataFrame(results)
+
+    all_trends = compute_all_trends()
+
+    # Φίλτρο κατηγορίας
+    trend_filter = st.multiselect(
+        "Εμφάνιση κατηγοριών:",
+        ["Ανερχόμενο","Σταθερό","Φθίνον"],
+        default=["Ανερχόμενο","Σταθερό","Φθίνον"],
+        key="trend_filter",
+    )
+
+    col_chart, col_info = st.columns([2, 1])
+
+    with col_info:
+        counts = all_trends["Τάση"].value_counts()
+        for label, color in TREND_COLORS.items():
+            n = counts.get(label, 0)
+            st.metric(label, f"{n} μουσεία",
+                      delta=f"{n/len(all_trends)*100:.0f}% του συνόλου",
+                      delta_color="off")
+
+    with col_chart:
+        top_n = st.slider("Εμφάνιση top-N ανά κατηγορία:", 5, 20, 10, key="top_n")
+        parts = []
+        for label in ["Ανερχόμενο","Σταθερό","Φθίνον"]:
+            if label not in trend_filter:
+                continue
+            sub = all_trends[all_trends["Τάση"]==label]
+            if label == "Φθίνον":
+                parts.append(sub.nsmallest(top_n, "pct_per_year"))
+            else:
+                parts.append(sub.nlargest(top_n, "pct_per_year"))
+        if parts:
+            plot_df = pd.concat(parts).sort_values("pct_per_year")
+            fig_rank = px.bar(
+                plot_df,
+                x="pct_per_year", y="Museum",
+                orientation="h",
+                color="Τάση",
+                color_discrete_map=TREND_COLORS,
+                text=plot_df["pct_per_year"].apply(lambda v: f"{v:+.1f}%"),
+                labels={"pct_per_year":"Ετήσια μεταβολή %","Museum":""},
+                title=f"Top {top_n} μουσεία ανά κατηγορία τάσης",
+            )
+            fig_rank.update_traces(textposition="outside")
+            fig_rank.update_layout(
+                height=max(350, len(plot_df)*26),
+                showlegend=False,
+                xaxis=dict(tickformat=".1f", ticksuffix="%"),
+                yaxis={"categoryorder":"total ascending"},
+                margin=dict(l=200),
+            )
+            st.plotly_chart(fig_rank, use_container_width=True)
+
+    # Πλήρης πίνακας
+    with st.expander("📋 Πλήρης Πίνακας Τάσεων"):
+        show_df = all_trends[all_trends["Τάση"].isin(trend_filter)].sort_values(
+            "pct_per_year", ascending=False
+        ).reset_index(drop=True)
+        show_df.index += 1
+        st.dataframe(
+            show_df.style.format({
+                "pct_per_year":  "{:+.2f}%",
+                "slope":         "{:+,.0f}",
+                "r2":            "{:.3f}",
+                "Last_Visitors": "{:,.0f}",
+                "Pred_2026":     "{:,.0f}",
+            }).applymap(
+                lambda v: f"color: {TREND_COLORS.get(v,'black')}" if isinstance(v,str) and v in TREND_COLORS else "",
+                subset=["Τάση"]
+            ),
+            use_container_width=True, height=450,
+        )
+        excel_trends = to_excel(show_df)
+        st.download_button(
+            "📥 Λήψη Excel", data=excel_trends,
+            file_name="museum_trends.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
