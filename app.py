@@ -1177,7 +1177,7 @@ else:
         # Για τον χωροπλήθη χρειαζόμαστε το id να ταιριάζει με το featureidkey
         geo_df = visitors_by_ru.dropna(subset=["GeoName"]).copy()
 
-        fig_choro = px.choropleth_mapbox(
+        fig_choro = px.choropleth_map(
             geo_df,
             geojson=geojson_data,
             locations="GeoName",
@@ -1194,7 +1194,7 @@ else:
                 "Museum_Count":   "Μουσεία",
             },
             color_continuous_scale="YlOrRd",
-            mapbox_style="carto-positron",
+            map_style="carto-positron",
             zoom=5.2,
             center={"lat": 39.0, "lon": 22.5},
             opacity=0.75,
@@ -1259,7 +1259,7 @@ else:
                 color_scale = "YlOrRd"
                 hover_extra = {"Rating": ":.1f", "Total_Visitors": ":,.0f"}
 
-            fig_scatter = px.scatter_mapbox(
+            fig_scatter = px.scatter_map(
                 df_scatter,
                 lat="Lat",
                 lon="Lng",
@@ -1281,7 +1281,7 @@ else:
                     "Regional_Unit":  "Περιφερειακή Ενότητα",
                     "Address":        "Διεύθυνση",
                 },
-                mapbox_style="carto-positron",
+                map_style="carto-positron",
                 zoom=5.2,
                 center={"lat": 39.0, "lon": 22.5},
                 title=f"Διασπορά Μουσείων — χρωματισμός: {color_by}",
@@ -1400,7 +1400,7 @@ if sklearn_ok and not df_places.empty:
         ]
         color_map_geo = {str(i): GEO_COLORS[i % len(GEO_COLORS)] for i in range(k_geo)}
 
-        fig_geo_map = px.scatter_mapbox(
+        fig_geo_map = px.scatter_map(
             df_cl,
             lat="Lat", lon="Lng",
             color="Geo_Cluster",
@@ -1415,7 +1415,7 @@ if sklearn_ok and not df_places.empty:
             labels={"Geo_Cluster": "Ζώνη", "Total_Visitors": "Επισκέπτες", "Rating": "★"},
             size="Total_Visitors",
             size_max=30,
-            mapbox_style="carto-positron",
+            map_style="carto-positron",
             zoom=5.0,
             center={"lat": 38.9, "lon": 23.5},
             title=f"Γεωγραφικές Ζώνες Μουσείων (k={k_geo})",
@@ -1630,7 +1630,7 @@ if sklearn_ok and not df_places.empty:
             }))
             df_combo.loc[df_combo["Beh_Cluster"]==c, "Cluster_Label"] = lbl
 
-        fig_combo = px.scatter_mapbox(
+        fig_combo = px.scatter_map(
             df_combo,
             lat="Lat", lon="Lng",
             color="Cluster_Label",
@@ -1651,7 +1651,7 @@ if sklearn_ok and not df_places.empty:
                 "Rating":         "Rating ★",
                 "Summer_Pct":     "Καλοκαίρι %",
             },
-            mapbox_style="carto-positron",
+            map_style="carto-positron",
             zoom=5.0,
             center={"lat": 38.9, "lon": 23.5},
             title="Γεωγραφική Κατανομή Behavioral Clusters",
