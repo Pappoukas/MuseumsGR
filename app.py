@@ -4,15 +4,28 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 from io import BytesIO
+from pathlib import Path
 
 # ─────────────────────────────────────────────
 # Ρύθμιση σελίδας
 # ─────────────────────────────────────────────
-st.set_page_config(page_title="Hellenic Museums Analytics", layout="wide")
+st.set_page_config(
+    page_title="Hellenic Museums Analytics",
+    page_icon="🏛️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 # ─────────────────────────────────────────────
 # Βοηθητικές Συναρτήσεις
 # ─────────────────────────────────────────────
+BASE_DIR = Path(__file__).resolve().parent
+DATA_FILE = BASE_DIR / "MuseumsGR.csv"
+PLACES_FILE = BASE_DIR / "museums_place_ids.csv"
+GEOJSON_FILE = BASE_DIR / "greece_regions.geojson"
+
+REQUIRED_COLUMNS = {"Region", "Museum", "Year", "Month", "Visitors"}
+
 def calculate_gini(array):
     """Υπολογισμός δείκτη Gini (0=Ισότητα, 1=Απόλυτη Ανισότητα)"""
     array = array.flatten()
@@ -25,15 +38,21 @@ def calculate_gini(array):
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv('MuseumsGR.csv', sep=';')
-    df['Date'] = pd.to_datetime(df['Year'].astype(str) + '-' + df['Month'].astype(str) + '-01')
+    if not DATA_FILE.exists():
+        raise FileNotFoundError(f"Δεν βρέθηκε το αρχείο δεδομένων: {DATA_FILE.name}")
+    df = pd.read_csv(DATA_FILE, sep=';')
+    missing = sorted(REQUIRED_COLUMNS.difference(df.columns))
+    if missing:
+        raise ValueError("Λείπουν υποχρεωτικές στήλες από το MuseumsGR.csv: " + ", ".join(missing))
+    df['Date'] = pd.to_datetime(df['Year'].astype(str) + '-' + df['Month'].astype(str) + '-01', errors='coerce')
+    if df['Date'].isna().any():
+        raise ValueError("Υπάρχουν μη έγκυρες τιμές στις στήλες Year/Month.")
     return df
 
 @st.cache_data
 def load_places():
-    import os
-    if os.path.exists('museums_place_ids.csv'):
-        df_p = pd.read_csv('museums_place_ids.csv', encoding='utf-8-sig')
+    if PLACES_FILE.exists():
+        df_p = pd.read_csv(PLACES_FILE, encoding='utf-8-sig')
         df_p = df_p[[
             'Museum', 'Region', 'Regional_Unit', 'Place_ID',
             'Google_Maps_URL', 'Rating', 'Ratings_Total', 'Address',
@@ -199,7 +218,7 @@ if selected_museum != "Όλα":
         title=f"Ετήσια Επισκεψιμότητα — {selected_museum}",
         color='Visitors', color_continuous_scale='Blues'
     )
-    st.plotly_chart(fig_museum, use_container_width=True)
+    st.plotly_chart(fig_museum, width="stretch")
     st.divider()
 
 # ═════════════════════════════════════════════
@@ -252,7 +271,7 @@ fig_trend.add_vrect(
     annotation_text="COVID-19", annotation_position="top left"
 )
 
-st.plotly_chart(fig_trend, use_container_width=True)
+st.plotly_chart(fig_trend, width="stretch")
 
 # ═════════════════════════════════════════════
 # 6. COVID IMPACT ANALYSIS
@@ -278,7 +297,7 @@ if len(baseline) > 0:
         labels={'vs_2019_%': 'Μεταβολή (%)'}
     )
     fig_covid.add_hline(y=0, line_dash="dash", line_color="gray")
-    st.plotly_chart(fig_covid, use_container_width=True)
+    st.plotly_chart(fig_covid, width="stretch")
 
     col_rec1, col_rec2, col_rec3 = st.columns(3)
     drop_2020 = yearly_all[yearly_all['Year'] == 2020]['Visitors'].values
@@ -316,7 +335,7 @@ fig_heat = px.imshow(
     labels=dict(x="Μήνας", y="Έτος", color="Επισκέπτες")
 )
 fig_heat.update_xaxes(side="bottom")
-st.plotly_chart(fig_heat, use_container_width=True)
+st.plotly_chart(fig_heat, width="stretch")
 
 st.divider()
 
@@ -350,7 +369,7 @@ if len(available_years) >= 2:
         title=f"Μηνιαία Σύγκριση: {yoy_year1} vs {yoy_year2}",
         category_orders={'Μήνας': list(MONTH_NAMES.values())}
     )
-    st.plotly_chart(fig_yoy, use_container_width=True)
+    st.plotly_chart(fig_yoy, width="stretch")
 
     # Ποσοστιαία μεταβολή ανά μήνα
     yoy_pivot = yoy_df.pivot(index='Month', columns='Year', values='Visitors')
@@ -364,7 +383,7 @@ if len(available_years) >= 2:
             yoy_pivot[[yoy_year1, yoy_year2, 'Μεταβολή (%)']].style.format({
                 yoy_year1: '{:,.0f}', yoy_year2: '{:,.0f}', 'Μεταβολή (%)': '{:+.1f}%'
             }),
-            use_container_width=True
+            width="stretch"
         )
 else:
     st.info("Απαιτούνται τουλάχιστον 2 έτη για σύγκριση.")
@@ -391,7 +410,7 @@ with col_left:
     )
     fig_s.add_hline(y=1.0, line_dash="dash", line_color="red",
                     annotation_text="Μέσος Όρος")
-    st.plotly_chart(fig_s, use_container_width=True)
+    st.plotly_chart(fig_s, width="stretch")
 
 with col_right:
     st.subheader("📉 Ανάλυση Ανισότητας (Gini)")
@@ -410,7 +429,7 @@ with col_right:
         )
         fig_l.add_shape(type="line", x0=0, y0=0, x1=1, y1=1,
                         line=dict(dash="dash", color="red"))
-        st.plotly_chart(fig_l, use_container_width=True)
+        st.plotly_chart(fig_l, width="stretch")
     else:
         st.info("Ο δείκτης Gini υπολογίζεται μόνο για πολλαπλά μουσεία.")
 
@@ -447,7 +466,7 @@ if selected_museum == "Όλα":
             title="Κατάταξη Περιφερειών (Συνολικοί Επισκέπτες)",
             color='Visitors', color_continuous_scale='Blues'
         )
-        st.plotly_chart(fig_reg, use_container_width=True)
+        st.plotly_chart(fig_reg, width="stretch")
 
     with tab_norm:
         fig_reg_n = px.bar(
@@ -456,7 +475,7 @@ if selected_museum == "Όλα":
             title="Κατάταξη Περιφερειών (Επισκέπτες ανά Μουσείο)",
             color='Επισκέπτες/Μουσείο', color_continuous_scale='Greens'
         )
-        st.plotly_chart(fig_reg_n, use_container_width=True)
+        st.plotly_chart(fig_reg_n, width="stretch")
 
     with tab_pct:
         fig_pct = px.bar(
@@ -470,14 +489,14 @@ if selected_museum == "Όλα":
             texttemplate='%{text:.2f}%',
             textposition='outside'
         )
-        st.plotly_chart(fig_pct, use_container_width=True)
+        st.plotly_chart(fig_pct, width="stretch")
 
         st.dataframe(
             reg_data[['Region', 'Visitors', 'Ποσοστό (%)']]
             .sort_values('Ποσοστό (%)', ascending=False)
             .reset_index(drop=True)
             .style.format({'Visitors': '{:,.0f}', 'Ποσοστό (%)': '{:.2f}%'}),
-            use_container_width=True
+            width="stretch"
         )
 
 st.divider()
@@ -521,14 +540,14 @@ if selected_museum == "Όλα":
                 texttemplate='%{text:.2f}%',
                 textposition='outside'
             )
-            st.plotly_chart(fig_season, use_container_width=True)
+            st.plotly_chart(fig_season, width="stretch")
 
             st.dataframe(
                 season_df[['Region', 'Visitors', 'Ποσοστό (%)']]
                 .sort_values('Ποσοστό (%)', ascending=False)
                 .reset_index(drop=True)
                 .style.format({'Visitors': '{:,.0f}', 'Ποσοστό (%)': '{:.2f}%'}),
-                use_container_width=True
+                width="stretch"
             )
 
 st.divider()
@@ -560,7 +579,7 @@ if not df_places.empty:
                      .sort_values('Rating', ascending=False).head(10).reset_index(drop=True))
             st.dataframe(
                 top_r.style.format({'Rating': '{:.1f}', 'Ratings_Total': '{:,.0f}'}),
-                use_container_width=True
+                width="stretch"
             )
         with col_b:
             st.write("🔻 Bottom 10 — Χαμηλότερη Βαθμολογία")
@@ -568,7 +587,7 @@ if not df_places.empty:
                      .sort_values('Rating').head(10).reset_index(drop=True))
             st.dataframe(
                 bot_r.style.format({'Rating': '{:.1f}', 'Ratings_Total': '{:,.0f}'}),
-                use_container_width=True
+                width="stretch"
             )
 
         # Κατανομή ratings
@@ -582,7 +601,7 @@ if not df_places.empty:
             x=df_merged['Rating'].mean(), line_dash="dash", line_color="red",
             annotation_text=f"Μέσος: {df_merged['Rating'].mean():.2f}"
         )
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_hist, width="stretch")
 
     with tab_r2:
         if 'Visitors' in df_merged.columns:
@@ -601,7 +620,7 @@ if not df_places.empty:
                 color_continuous_scale='RdYlGn',
                 log_x=True
             )
-            st.plotly_chart(fig_scatter, use_container_width=True)
+            st.plotly_chart(fig_scatter, width="stretch")
             st.caption("💡 Μέγεθος bubble = αριθμός κριτικών | Χρώμα = βαθμολογία | Άξονας Χ σε λογαριθμική κλίμακα")
 
     with tab_r3:
@@ -615,7 +634,7 @@ if not df_places.empty:
                 'Rating': '{:.1f}',
                 'Ratings_Total': '{:,.0f}'
             }),
-            use_container_width=True
+            width="stretch"
         )
 
         excel_ratings = to_excel(
@@ -672,7 +691,7 @@ with tab_vm:
         line_dash="dash", line_color="red",
         annotation_text="Μέσος Όρος"
     )
-    st.plotly_chart(fig_vm, use_container_width=True)
+    st.plotly_chart(fig_vm, width="stretch")
 
     # Box plot εποχικότητας
     final_df_month = final_df.copy()
@@ -685,7 +704,7 @@ with tab_vm:
         category_orders={'Μήνας': list(MONTH_NAMES.values())}
     )
     fig_box.update_layout(showlegend=False)
-    st.plotly_chart(fig_box, use_container_width=True)
+    st.plotly_chart(fig_box, width="stretch")
 
 # ── Visitors vs Region ────────────────────────
 with tab_vr:
@@ -709,7 +728,7 @@ with tab_vr:
         fig_vr1.update_traces(
             texttemplate='%{text:,.0f}', textposition='outside'
         )
-        st.plotly_chart(fig_vr1, use_container_width=True)
+        st.plotly_chart(fig_vr1, width="stretch")
 
     with col_rv2:
         fig_vr2 = px.bar(
@@ -722,7 +741,7 @@ with tab_vr:
         fig_vr2.update_traces(
             texttemplate='%{text:,.0f}', textposition='outside'
         )
-        st.plotly_chart(fig_vr2, use_container_width=True)
+        st.plotly_chart(fig_vr2, width="stretch")
 
     # Treemap
     fig_tree = px.treemap(
@@ -732,7 +751,7 @@ with tab_vr:
         title="Treemap Επισκεψιμότητας ανά Περιφέρεια",
         color='Σύνολο', color_continuous_scale='Blues'
     )
-    st.plotly_chart(fig_tree, use_container_width=True)
+    st.plotly_chart(fig_tree, width="stretch")
 
 # ── Visitors vs Sentiment (Google Rating) ─────
 with tab_vs:
@@ -799,7 +818,7 @@ with tab_vs:
             },
             log_y=True
         )
-        st.plotly_chart(fig_sent1, use_container_width=True)
+        st.plotly_chart(fig_sent1, width="stretch")
 
         # Box plot επισκεπτών ανά sentiment
         fig_sent2 = px.box(
@@ -818,7 +837,7 @@ with tab_vs:
             log_y=True
         )
         fig_sent2.update_layout(showlegend=False)
-        st.plotly_chart(fig_sent2, use_container_width=True)
+        st.plotly_chart(fig_sent2, width="stretch")
         st.caption("💡 Άξονας Y σε λογαριθμική κλίμακα λόγω μεγάλης απόκλισης τιμών")
     else:
         st.info("Απαιτείται το αρχείο museums_place_ids.csv για την ανάλυση Sentiment.")
@@ -925,7 +944,7 @@ else:
             fillcolor="gray", opacity=0.08,
             annotation_text="COVID-19", annotation_position="top left"
         )
-        st.plotly_chart(fig_ts, use_container_width=True)
+        st.plotly_chart(fig_ts, width="stretch")
 
     # Μηνιαία
     with tab_c2:
@@ -943,7 +962,7 @@ else:
             color_discrete_map={museum_a: '#3498db', museum_b: '#e74c3c'},
             category_orders={'Μήνας': list(MONTH_NAMES.values())}
         )
-        st.plotly_chart(fig_ma, use_container_width=True)
+        st.plotly_chart(fig_ma, width="stretch")
 
     # Ετήσια
     with tab_c3:
@@ -959,7 +978,7 @@ else:
             title="Ετήσια Επισκεψιμότητα",
             color_discrete_map={museum_a: '#3498db', museum_b: '#e74c3c'}
         )
-        st.plotly_chart(fig_ya, use_container_width=True)
+        st.plotly_chart(fig_ya, width="stretch")
 
         # Ποσοστιαία μεταβολή
         ya_pivot = ya_all.pivot(index='Year', columns='Μουσείο', values='Visitors')
@@ -971,7 +990,7 @@ else:
                 f'Μεταβολή {museum_a} (%)': '{:+.1f}%',
                 f'Μεταβολή {museum_b} (%)': '{:+.1f}%',
             }),
-            use_container_width=True
+            width="stretch"
         )
 
     # Heatmap
@@ -994,12 +1013,12 @@ else:
         with hm_col1:
             st.plotly_chart(
                 make_heatmap(df_a, museum_a, 'Blues'),
-                use_container_width=True
+                width="stretch"
             )
         with hm_col2:
             st.plotly_chart(
                 make_heatmap(df_b, museum_b, 'Reds'),
-                use_container_width=True
+                width="stretch"
             )
 
 st.divider()
@@ -1010,7 +1029,7 @@ st.divider()
 st.subheader("📋 Αναλυτικά Στοιχεία (Πίνακας)")
 st.dataframe(
     final_df[['Region', 'Museum', 'Year', 'Month', 'Visitors']],
-    use_container_width=True
+    width="stretch"
 )
 
 col_dl1, col_dl2 = st.columns(2)
@@ -1040,7 +1059,7 @@ with col_dl2:
 st.divider()
 st.subheader("🗺️ Γεωγραφική Κατανομή Μουσείων")
 
-import json, os
+import json
 
 # ── Mapping: Regional_Unit (γενική) → name_greek στο GeoJSON (ονομαστική) ──
 RU_TO_GEOJSON = {
@@ -1098,16 +1117,16 @@ RU_TO_GEOJSON = {
 
 @st.cache_data
 def load_geojson():
-    if os.path.exists("greece_regions.geojson"):
-        with open("greece_regions.geojson", encoding="utf-8") as f:
+    if GEOJSON_FILE.exists():
+        with open(GEOJSON_FILE, encoding="utf-8") as f:
             return json.load(f)
     return None
 
 @st.cache_data
 def load_places_map():
-    if not os.path.exists("museums_place_ids.csv"):
+    if not PLACES_FILE.exists():
         return pd.DataFrame()
-    df_m = pd.read_csv("museums_place_ids.csv", encoding="utf-8-sig")
+    df_m = pd.read_csv(PLACES_FILE, encoding="utf-8-sig")
     df_m["Rating"]        = pd.to_numeric(df_m.get("Rating"),        errors="coerce")
     df_m["Ratings_Total"] = pd.to_numeric(df_m.get("Ratings_Total"), errors="coerce")
     for col in ("Lat", "Lng"):
@@ -1185,7 +1204,7 @@ else:
             margin={"r": 0, "t": 40, "l": 0, "b": 0},
             coloraxis_colorbar=dict(title="Επισκέπτες"),
         )
-        st.plotly_chart(fig_choro, use_container_width=True)
+        st.plotly_chart(fig_choro, width="stretch")
 
         # Πίνακας στατιστικών ανά ΠΕ
         with st.expander("📋 Αναλυτικός Πίνακας ανά Περιφερειακή Ενότητα"):
@@ -1200,7 +1219,7 @@ else:
                     "Total_Visitors": "{:,.0f}",
                     "Museum_Count":   "{:,.0f}",
                 }),
-                use_container_width=True,
+                width="stretch",
             )
 
     # ══ TAB 2: SCATTER ΧΑΡΤΗΣ ΜΟΥΣΕΙΩΝ ══════════════════════════════════════
@@ -1271,7 +1290,7 @@ else:
                 margin={"r": 0, "t": 40, "l": 0, "b": 0},
                 coloraxis_colorbar=dict(title=color_label),
             )
-            st.plotly_chart(fig_scatter, use_container_width=True)
+            st.plotly_chart(fig_scatter, width="stretch")
 
             # Σύνοψη
             col_m1, col_m2, col_m3 = st.columns(3)
@@ -1406,7 +1425,7 @@ if sklearn_ok and not df_places.empty:
             margin={"r":0,"t":40,"l":0,"b":0},
             legend=dict(title="Ζώνη", orientation="h", y=-0.08),
         )
-        st.plotly_chart(fig_geo_map, use_container_width=True)
+        st.plotly_chart(fig_geo_map, width="stretch")
 
         # Σύνοψη ζωνών
         geo_summary = (
@@ -1427,7 +1446,7 @@ if sklearn_ok and not df_places.empty:
                     "Μέσ_Επισκέπτες": "{:,.0f}",
                     "Μέσ_Rating":     "{:.2f}",
                 }),
-                use_container_width=True, hide_index=True,
+                width="stretch", hide_index=True,
             )
 
     # ════════════════════════════════════════════════════════════════════
@@ -1530,7 +1549,7 @@ if sklearn_ok and not df_places.empty:
                 title="Προφίλ Ομάδων (Radar)",
                 height=420,
             )
-            st.plotly_chart(fig_radar, use_container_width=True)
+            st.plotly_chart(fig_radar, width="stretch")
 
         with col_bar:
             # Bar chart: μέση επισκεψιμότητα ανά cluster
@@ -1564,7 +1583,7 @@ if sklearn_ok and not df_places.empty:
                 yaxis=dict(tickformat=",.0f"),
                 xaxis_title="",
             )
-            st.plotly_chart(fig_beh_bar, use_container_width=True)
+            st.plotly_chart(fig_beh_bar, width="stretch")
 
         # Αναλυτικός πίνακας
         with st.expander("📋 Αναλυτικά Μουσεία ανά Κατηγορία"):
@@ -1582,7 +1601,7 @@ if sklearn_ok and not df_places.empty:
                     "Summer_Pct":     "{:.1%}",
                     "CV":             "{:.2f}",
                 }),
-                use_container_width=True, height=400,
+                width="stretch", height=400,
             )
 
     # ════════════════════════════════════════════════════════════════════
@@ -1642,7 +1661,7 @@ if sklearn_ok and not df_places.empty:
             margin={"r":0,"t":40,"l":0,"b":0},
             legend=dict(title="Κατηγορία", orientation="h", y=-0.08),
         )
-        st.plotly_chart(fig_combo, use_container_width=True)
+        st.plotly_chart(fig_combo, width="stretch")
 
         # Insight box
         st.info(
@@ -1783,7 +1802,7 @@ else:
             height=580,
             legend=dict(title="Κατηγορία", orientation="h", y=-0.15),
         )
-        st.plotly_chart(fig_quad, use_container_width=True)
+        st.plotly_chart(fig_quad, width="stretch")
 
         # Σύνοψη ανά τεταρτημόριο
         quad_summary = (
@@ -1804,7 +1823,7 @@ else:
                     "Μέσοι_Επισκέπτες":    "{:,.0f}",
                     "Σύνολο_Κριτικών":     "{:,.0f}",
                 }),
-                use_container_width=True,
+                width="stretch",
             )
 
     # ════════════════════════════════════════════════════════════════
@@ -1844,7 +1863,7 @@ else:
                 showlegend=True,
             )
             fig_corr.update_layout(height=480, legend=dict(orientation="h", y=-0.2))
-            st.plotly_chart(fig_corr, use_container_width=True)
+            st.plotly_chart(fig_corr, width="stretch")
 
         with col_r:
             st.markdown("#### 💡 Ερμηνεία")
@@ -1870,7 +1889,7 @@ else:
                     f"{df_rv['Rating'].max():.1f}",
                 ]
             })
-            st.dataframe(stats_df, use_container_width=True, hide_index=True)
+            st.dataframe(stats_df, width="stretch", hide_index=True)
 
     # ════════════════════════════════════════════════════════════════
     # TAB 3 — ΑΘΟΡΥΒΟΙ ΕΠΙΣΚΕΠΤΕΣ
@@ -1922,7 +1941,7 @@ else:
             yaxis={"categoryorder": "total ascending"},
             coloraxis_colorbar=dict(title="Rating ★"),
         )
-        st.plotly_chart(fig_silent, use_container_width=True)
+        st.plotly_chart(fig_silent, width="stretch")
 
         st.caption(
             "📌 Ο δείκτης **Κριτικές / 1.000 Επισκέπτες** μετρά πόσοι επισκέπτες "
@@ -1959,7 +1978,7 @@ else:
                 showlegend=False,
                 yaxis_title="",
             )
-            st.plotly_chart(fig_box, use_container_width=True)
+            st.plotly_chart(fig_box, width="stretch")
 
         with col_bar:
             # Stacked bar: σύνθεση τεταρτημορίων ανά περιφέρεια
@@ -1984,7 +2003,7 @@ else:
                 yaxis_title="",
                 legend=dict(title="", orientation="h", y=-0.15),
             )
-            st.plotly_chart(fig_stack, use_container_width=True)
+            st.plotly_chart(fig_stack, width="stretch")
 
         # Αναλυτικός πίνακας ανά περιφέρεια
         with st.expander("📋 Αναλυτικά ανά Περιφέρεια"):
@@ -2008,7 +2027,7 @@ else:
                     "Σύνολο_Επισκ":     "{:,.0f}",
                     "Σύνολο_Κριτικών":  "{:,.0f}",
                 }),
-                use_container_width=True,
+                width="stretch",
             )
 
     # ════════════════════════════════════════════════════════════════
@@ -2046,7 +2065,7 @@ else:
                 "Review_Rate":    "{:.2f}",
             })
             .map(color_quadrant, subset=["Quadrant"]),
-            use_container_width=True,
+            width="stretch",
             height=500,
         )
         st.caption(f"Εμφανίζονται {len(df_show)} από {len(df_rv)} μουσεία")
@@ -2202,7 +2221,7 @@ with tab_nat:
         legend=dict(orientation="h", y=-0.2),
         yaxis=dict(tickformat=",.0f"),
     )
-    st.plotly_chart(fig_nat, use_container_width=True)
+    st.plotly_chart(fig_nat, width="stretch")
     st.caption(
         "Η τάση υπολογίζεται με **γραμμική παλινδρόμηση** (OLS) εξαιρώντας τα COVID έτη. "
         "Το διάστημα εμπιστοσύνης ±95% διευρύνεται για μακρύτερες προβλέψεις."
@@ -2258,7 +2277,7 @@ with tab_region:
             yaxis={"categoryorder": "total ascending"},
             legend=dict(orientation="h", y=-0.15),
         )
-        st.plotly_chart(fig_reg, use_container_width=True)
+        st.plotly_chart(fig_reg, width="stretch")
 
     with col_map:
         # Small-multiples: γραμμές τάσης ανά περιφέρεια
@@ -2279,7 +2298,7 @@ with tab_region:
             legend=dict(orientation="h", y=-0.35, font_size=10),
             yaxis=dict(tickformat=",.0f"),
         )
-        st.plotly_chart(fig_lines, use_container_width=True)
+        st.plotly_chart(fig_lines, width="stretch")
 
     # Πρόβλεψη 2026 ανά περιφέρεια
     with st.expander("📋 Πρόβλεψη 2026 ανά Περιφέρεια"):
@@ -2296,7 +2315,7 @@ with tab_region:
                 lambda v: f"color: {TREND_COLORS.get(v,'black')}" if isinstance(v,str) and v in TREND_COLORS else "",
                 subset=["Τάση"]
             ),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 
 # ════════════════════════════════════════════════════════════════════
@@ -2402,7 +2421,7 @@ with tab_museum:
             height=460, legend=dict(orientation="h", y=-0.2),
             yaxis=dict(tickformat=",.0f"),
         )
-        st.plotly_chart(fig_m, use_container_width=True)
+        st.plotly_chart(fig_m, width="stretch")
 
         st.caption(
             f"Τάση: **{pct_m:+.1f}%/έτος** | "
@@ -2490,7 +2509,7 @@ with tab_rank:
                 yaxis={"categoryorder":"total ascending"},
                 margin=dict(l=200),
             )
-            st.plotly_chart(fig_rank, use_container_width=True)
+            st.plotly_chart(fig_rank, width="stretch")
 
     # Πλήρης πίνακας
     with st.expander("📋 Πλήρης Πίνακας Τάσεων"):
@@ -2509,7 +2528,7 @@ with tab_rank:
                 lambda v: f"color: {TREND_COLORS.get(v,'black')}" if isinstance(v,str) and v in TREND_COLORS else "",
                 subset=["Τάση"]
             ),
-            use_container_width=True, height=450,
+            width="stretch", height=450,
         )
         excel_trends = to_excel(show_df)
         st.download_button(
@@ -2602,7 +2621,7 @@ with tab_dec:
             yaxis_title="Εκατομμύρια Επισκέπτες",
             height=380, xaxis_title="",
         )
-        st.plotly_chart(fig_dec_bar, use_container_width=True)
+        st.plotly_chart(fig_dec_bar, width="stretch")
 
     with col_d2:
         # Market share ανά περιφέρεια ανά δεκαετία
@@ -2627,7 +2646,7 @@ with tab_dec:
             yaxis=dict(ticksuffix="%"),
             xaxis_title="",
         )
-        st.plotly_chart(fig_share, use_container_width=True)
+        st.plotly_chart(fig_share, width="stretch")
 
     # Μουσεία ανά δεκαετία: ποια "ακμάζουν" σε κάθε εποχή
     with st.expander("🏛️ Top 5 Μουσεία ανά Δεκαετία"):
@@ -2680,7 +2699,7 @@ with tab_seas:
             yaxis=dict(ticksuffix="%", range=[0, 55]),
             legend=dict(orientation="h", y=-0.2),
         )
-        st.plotly_chart(fig_seas, use_container_width=True)
+        st.plotly_chart(fig_seas, width="stretch")
 
     with col_s2:
         # Τάση καλοκαιρινού % με OLS
@@ -2724,7 +2743,7 @@ with tab_seas:
             yaxis=dict(tickformat=",.0f"),
             margin=dict(t=40, b=0),
         )
-        st.plotly_chart(fig_monthly, use_container_width=True)
+        st.plotly_chart(fig_monthly, width="stretch")
 
     # Heatmap εποχικής κατανομής ανά περιφέρεια
     st.markdown("#### 🌡️ Εποχική Κατανομή ανά Περιφέρεια")
@@ -2745,7 +2764,7 @@ with tab_seas:
         labels={"color": "%"},
     )
     fig_heat_seas.update_layout(height=380, coloraxis_showscale=True)
-    st.plotly_chart(fig_heat_seas, use_container_width=True)
+    st.plotly_chart(fig_heat_seas, width="stretch")
 
 # ════════════════════════════════════════════════════════════════════
 # TAB 3 — POST-COVID ΑΝΑΚΑΜΨΗ
@@ -2815,7 +2834,7 @@ with tab_covid:
             xaxis=dict(ticksuffix="%", range=[0, 140]),
             legend=dict(orientation="h", y=-0.15),
         )
-        st.plotly_chart(fig_rec_reg, use_container_width=True)
+        st.plotly_chart(fig_rec_reg, width="stretch")
 
     with col_r2:
         # Ανάκαμψη ανά μουσείο: scatter recovery vs size
@@ -2859,7 +2878,7 @@ with tab_covid:
             height=420,
             legend=dict(orientation="h", y=-0.15),
         )
-        st.plotly_chart(fig_rec_mus, use_container_width=True)
+        st.plotly_chart(fig_rec_mus, width="stretch")
 
     # Μουσεία που δεν έχουν ανακάμψει
     with st.expander(f"📋 Αναλυτική Κατάσταση Ανάκαμψης ({comp_yr} vs {BASE_YEAR})"):
@@ -2875,7 +2894,7 @@ with tab_covid:
                 lambda v: f"color: {STATUS_COLORS.get(v,'')}" if v in STATUS_COLORS else "",
                 subset=["Status"]
             ),
-            use_container_width=True, height=400,
+            width="stretch", height=400,
         )
 
 # ════════════════════════════════════════════════════════════════════
@@ -2946,7 +2965,7 @@ with tab_polar:
                 showlegend=False,
                 margin=dict(t=60, b=20, l=40, r=40),
             )
-            col.plotly_chart(fig_polar, use_container_width=True)
+            col.plotly_chart(fig_polar, width="stretch")
 
     # Σύγκριση CV εποχικότητας ανά περιφέρεια
     st.markdown("#### 📊 Δείκτης Εποχικότητας ανά Περιφέρεια (CV)")
@@ -2984,4 +3003,4 @@ with tab_polar:
         legend=dict(orientation="h", y=-0.15),
         xaxis=dict(range=[0, cv_region["CV"].max() * 1.2]),
     )
-    st.plotly_chart(fig_cv, use_container_width=True)
+    st.plotly_chart(fig_cv, width="stretch")
